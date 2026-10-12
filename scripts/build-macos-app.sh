@@ -29,5 +29,9 @@ if [[ -d "$(swift build -c release --show-bin-path)/Taskit_Taskit.bundle" ]]; th
 fi
 
 chmod +x "$MACOS/Taskit"
+
+# Ad-hoc sign so macOS treats it as one app (needed for Open at login and notifications).
+codesign --force --deep --sign - "$APP_DIR"
+
 echo "Built $APP_DIR"
 echo "Open with: open \"$APP_DIR\""

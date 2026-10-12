@@ -3,46 +3,69 @@ import TaskitCore
 
 @main
 struct TaskitApp: App {
-    @State private var engine = RelayEngine()
+    @State private var app = AppModel()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarRootView(engine: engine)
+            PanelView(app: app)
         } label: {
-            // Timeline only while cooling — idle/active labels stay static (zero timer cost).
-            if engine.session.phase == .cooling {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    menuLabel(at: context.date)
-                }
-            } else {
-                menuLabel(at: .now)
-            }
+            MenuBarLabel(engine: app.engine)
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
-            SettingsView(engine: engine)
+        Window("Taskit Settings", id: "settings") {
+            SettingsView(app: app)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+    }
+}
+
+/// Icon plus the shortest useful text: "3", "2/5", "2:14", "Paused".
+@MainActor
+struct MenuBarLabel: View {
+    let engine: RelayEngine
+
+    var body: some View {
+        if engine.phase == .waiting {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                label(at: context.date)
+            }
+        } else {
+            label(at: Date())
         }
     }
 
-    @ViewBuilder
-    private func menuLabel(at date: Date) -> some View {
-        Label {
-            Text(engine.menuBarLabel(at: date))
-        } icon: {
-            Image(systemName: menuSymbol)
-                .symbolRenderingMode(.hierarchical)
+    private func label(at now: Date) -> some View {
+        let text = Self.text(for: engine, now: now)
+        return HStack(spacing: 4) {
+            Image(systemName: Self.symbol(for: engine.phase))
+            if !text.isEmpty {
+                Text(text).monospacedDigit()
+            }
         }
-        .help(engine.statusMessage)
     }
 
-    private var menuSymbol: String {
-        if engine.isPaused { return "pause.circle" }
-        switch engine.session.phase {
-        case .cooling: return "hourglass"
-        case .ready: return "sparkles"
-        case .active: return "guidepost.fill"
-        case .idle: return "moon.stars"
+    static func symbol(for phase: Phase) -> String {
+        switch phase {
+        case .empty, .idle: return "list.bullet"
+        case .running: return "play.circle"
+        case .waiting: return "hourglass"
+        case .paused: return "pause.circle"
+        case .done: return "checkmark.circle"
+        }
+    }
+
+    static func text(for engine: RelayEngine, now: Date) -> String {
+        let finished = engine.doneCount + engine.failedCount
+        switch engine.phase {
+        case .empty: return ""
+        case .idle: return "\(engine.pendingCount)"
+        case .running, .done: return "\(finished)/\(engine.items.count)"
+        case .waiting:
+            guard let limit = engine.limit else { return "" }
+            return DurationFormat.menuCountdown(limit.resetsAt.timeIntervalSince(now))
+        case .paused: return "Paused"
         }
     }
 }

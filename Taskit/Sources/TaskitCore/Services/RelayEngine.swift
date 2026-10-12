@@ -1,701 +1,503 @@
-import AppKit
 import Foundation
 import Observation
 
+public enum RelayEvent: Equatable, Sendable {
+    case promptStarted(QueueItem)
+    case promptFinished(QueueItem)
+    case promptFailed(QueueItem)
+    case limitHit(LimitState)
+    case limitCleared
+    case queueFinished(done: Int, failed: Int)
+    /// True while Taskit has work in flight (a prompt running or a limit being waited out).
+    case activityChanged(Bool)
+}
+
+/// Sends queued prompts to Claude Code one at a time and waits out usage limits.
 @MainActor
 @Observable
 public final class RelayEngine {
-    public private(set) var goals: [Goal] = []
-    /// Pre-sorted mirror of `goals` — avoids O(n log n) sorts on every SwiftUI body.
-    public private(set) var orderedGoals: [Goal] = []
-    public private(set) var completedCount = 0
-    public private(set) var queuedCount = 0
+    public private(set) var items: [QueueItem] = []
+    public private(set) var runState: RunState = .stopped
+    public private(set) var limit: LimitState?
+    public private(set) var threadSessionId: String?
+    /// Why the queue stopped on its own (missing folder, not signed in, …).
+    public private(set) var notice: String?
+    public private(set) var settings: RelaySettings
 
-    public var settings: AppSettings = .default
-    public var session: SessionClock = .init()
-    /// Small ring for diagnostics — not rendered in the hot UI path.
-    public private(set) var events: [DispatchEvent] = []
-    public var isBusy = false
-    public var statusMessage = "Queue a few prompts for the day."
-    public var apiKeyPresent = false
+    /// App hook for notifications, keep-awake and the like.
+    @ObservationIgnored public var onEvent: ((RelayEvent) -> Void)?
 
-    private var pollTask: Task<Void, Never>?
-    private var coolingWakeTask: Task<Void, Never>?
-    private var persistTask: Task<Void, Never>?
-    private var settingsDebounceTask: Task<Void, Never>?
-    private var dirty: Set<PersistKey> = []
-    private var apiKey: String = ""
-    private var wakeObserver: NSObjectProtocol?
-    private var pollBackoffNanoseconds: UInt64 = 2_000_000_000
-    private var cachedClient: CursorAPIClient?
+    @ObservationIgnored private let store: QueueStoring
+    @ObservationIgnored private let runner: ClaudeRunning
+    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
+    @ObservationIgnored private let environment: () -> [String: String]
+    @ObservationIgnored private let locateClaude: (RelaySettings, [String: String]) -> URL?
 
-    private static let maxEvents = 24
-    private static let persistDebounceNanoseconds: UInt64 = 250_000_000
-    private static let settingsDebounceNanoseconds: UInt64 = 400_000_000
-    private static let pollFloorNanoseconds: UInt64 = 2_000_000_000
-    private static let pollCeilNanoseconds: UInt64 = 15_000_000_000
+    @ObservationIgnored private(set) var runTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var wakeTask: Task<Void, Never>?
+    @ObservationIgnored private var lastActivity = false
+    @ObservationIgnored private var consecutiveFailures = 0
+    @ObservationIgnored private var isShuttingDown = false
 
-    public var queuedGoals: [Goal] {
-        orderedGoals.filter { $0.status == .queued || $0.status == .waitingOnLimit }
+    /// Extra wait after the advertised reset time before retrying.
+    public nonisolated static let resetGrace: TimeInterval = 60
+    /// Pause after this many failures in a row instead of burning through the queue.
+    public nonisolated static let maxConsecutiveFailures = 3
+
+    public nonisolated static let continuousSleep: @Sendable (TimeInterval) async throws -> Void = { seconds in
+        // ContinuousClock keeps counting while the Mac sleeps.
+        try await Task.sleep(for: .seconds(max(0, seconds)))
     }
 
-    public var activeGoal: Goal? {
-        orderedGoals.first { $0.status == .running || $0.status == .dispatching }
+    public nonisolated static func defaultLocate(_ settings: RelaySettings, _ env: [String: String]) -> URL? {
+        ClaudeLocator.locate(override: settings.claudePath, path: env["PATH"])
     }
 
-    public var nextGoal: Goal? {
-        orderedGoals.first { $0.status == .queued || $0.status == .waitingOnLimit }
+    public init(
+        store: QueueStoring,
+        runner: ClaudeRunning = ProcessClaudeRunner(),
+        now: @escaping () -> Date = Date.init,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = RelayEngine.continuousSleep,
+        environment: @escaping () -> [String: String] = {
+            ClaudeCommand.environment(base: ProcessInfo.processInfo.environment, loginShellPath: nil)
+        },
+        locateClaude: @escaping (RelaySettings, [String: String]) -> URL? = RelayEngine.defaultLocate
+    ) {
+        self.store = store
+        self.runner = runner
+        self.now = now
+        self.sleep = sleep
+        self.environment = environment
+        self.locateClaude = locateClaude
+
+        settings = store.loadSettings()
+        let snapshot = store.loadSnapshot()
+        // A prompt that was running when Taskit quit never reported back: run it again.
+        items = snapshot.items.map { item in
+            guard item.status == .running else { return item }
+            var copy = item
+            copy.status = .queued
+            copy.startedAt = nil
+            return copy
+        }
+        runState = snapshot.runState
+        limit = snapshot.limit
+        threadSessionId = snapshot.threadSessionId
+        normalizeRunState()
     }
 
-    public var isPaused: Bool { settings.sessionFlowPaused }
-
-    public var readinessIssues: [String] {
-        var issues: [String] = []
-        if !apiKeyPresent { issues.append("Add a Cursor API key") }
-        if queuedCount == 0 { issues.append("Queue at least one prompt") }
-        return issues
+    /// Call once the app has wired `onEvent`. Resumes a queue that was running at quit.
+    public func activate() {
+        if runState == .running {
+            pump()
+        }
+        updateActivity()
     }
 
-    public init() {
-        reload()
-        installWakeObserver()
-        armCoolingWakeIfNeeded()
-        resumePollingIfNeeded()
+    // MARK: - Derived state
+
+    public var runningItem: QueueItem? { items.first { $0.status == .running } }
+    public var pendingCount: Int { items.filter(\.isPending).count }
+    public var doneCount: Int { items.filter { $0.status == .done }.count }
+    public var failedCount: Int { items.filter { $0.status == .failed }.count }
+    public var hasPending: Bool { items.contains(where: \.isPending) }
+    public var hasFinished: Bool { items.contains(where: \.isFinished) }
+
+    /// A prompt is running, or a usage limit is being waited out.
+    public var isActive: Bool {
+        runState == .running && (runTask != nil || limit != nil)
     }
 
-    // MARK: - Labels (pure — no stored ticking state)
-
-    public func menuBarLabel(at now: Date = .now) -> String {
-        switch session.phase {
-        case .cooling:
-            return DurationFormat.clock(DurationFormat.remaining(until: session.coolingUntil, now: now))
-        case .ready:
-            return "Ready"
-        case .active:
-            return String(activeGoal?.displayTitle.prefix(18) ?? "Active")
-        case .idle:
-            return queuedCount == 0 ? "Taskit" : "\(queuedCount) left"
+    public var phase: Phase {
+        if items.isEmpty { return .empty }
+        switch runState {
+        case .paused:
+            return .paused
+        case .running:
+            if runningItem == nil, limit != nil { return .waiting }
+            return .running
+        case .stopped:
+            return hasPending ? .idle : .done
         }
     }
 
-    public func remainingCoolingLabel(at now: Date = .now) -> String {
-        DurationFormat.clock(DurationFormat.remaining(until: session.coolingUntil, now: now))
-    }
-
-    public func coolingProgress(at now: Date = .now) -> Double {
-        guard session.phase == .cooling, session.windowSeconds > 0 else {
-            return session.phase == .ready ? 1 : 0
-        }
-        let remaining = DurationFormat.remaining(until: session.coolingUntil, now: now)
-        return min(1, max(0, 1 - (remaining / session.windowSeconds)))
-    }
-
-    // MARK: - Lifecycle
-
-    public func reload() {
-        goals = Persistence.load([Goal].self, from: Persistence.goalsURL, fallback: [])
-        settings = Persistence.load(AppSettings.self, from: Persistence.settingsURL, fallback: .default)
-        session = Persistence.load(SessionClock.self, from: Persistence.sessionURL, fallback: .init())
-        events = Persistence.load([DispatchEvent].self, from: Persistence.eventsURL, fallback: [])
-        if events.count > Self.maxEvents {
-            events = Array(events.prefix(Self.maxEvents))
-        }
-        session.windowSeconds = settings.sessionWindowSeconds
-        apiKey = KeychainStore.loadAPIKey() ?? ""
-        apiKeyPresent = !apiKey.isEmpty
-        rebuildGoalDerivedState()
-        invalidateClient()
-        if session.tick() {
-            statusMessage = "Limit window cleared. Ready to continue."
-            markDirty(.session)
-            flushPersistenceNow()
-        }
-    }
-
-    public func persist() {
-        markDirty(.goals, .settings, .session, .events)
-        flushPersistenceNow()
-    }
-
-    public func updateAPIKey(_ value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            KeychainStore.deleteAPIKey()
-            apiKey = ""
-            apiKeyPresent = false
-        } else {
-            try? KeychainStore.saveAPIKey(trimmed)
-            apiKey = trimmed
-            apiKeyPresent = true
-        }
-        invalidateClient()
-    }
-
-    public func addGoal(title: String, prompt: String) {
-        let nextIndex = (goals.map(\.sortIndex).max() ?? -1) + 1
-        let goal = Goal(title: title, prompt: prompt, sortIndex: nextIndex)
-        goals.append(goal)
-        rebuildGoalDerivedState()
-        statusMessage = "Added “\(goal.displayTitle)”."
-        markDirty(.goals)
-        schedulePersist()
-    }
+    // MARK: - Queue editing
 
     @discardableResult
-    public func addGoalsFromPaste(_ raw: String) -> Int {
+    public func add(_ raw: String) -> Int {
         let prompts = PromptBulkImport.prompts(from: raw)
         guard !prompts.isEmpty else { return 0 }
-        var nextIndex = (goals.map(\.sortIndex).max() ?? -1) + 1
-        for prompt in prompts {
-            let goal = Goal(
-                title: PromptBulkImport.titleHint(for: prompt),
-                prompt: prompt,
-                sortIndex: nextIndex
-            )
-            goals.append(goal)
-            nextIndex += 1
-        }
-        rebuildGoalDerivedState()
-        statusMessage = prompts.count == 1
-            ? "Added “\(PromptBulkImport.titleHint(for: prompts[0]))”."
-            : "Added \(prompts.count) prompts from paste."
-        markDirty(.goals)
-        schedulePersist()
+        let created = now()
+        items += prompts.map { QueueItem(prompt: $0, createdAt: created) }
+        save()
+        if runState == .running { pump() }
         return prompts.count
     }
 
-    public func updateGoal(_ goal: Goal, title: String, prompt: String) {
-        guard let idx = goals.firstIndex(where: { $0.id == goal.id }) else { return }
-        goals[idx].title = title
-        goals[idx].prompt = prompt
-        rebuildGoalDerivedState()
-        statusMessage = "Updated “\(goals[idx].displayTitle)”."
-        markDirty(.goals)
-        schedulePersist()
+    public func remove(_ id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].status != .running else { return }
+        items.remove(at: index)
+        normalizeRunState()
+        save()
+        if runState == .running { pump() }
+        updateActivity()
     }
 
-    public func requeueGoal(_ goal: Goal) {
-        guard let idx = goals.firstIndex(where: { $0.id == goal.id }) else { return }
-        goals[idx].status = .queued
-        goals[idx].lastError = nil
-        goals[idx].completedAt = nil
-        goals[idx].startedAt = nil
-        rebuildGoalDerivedState()
-        statusMessage = "Requeued “\(goals[idx].displayTitle)”."
-        markDirty(.goals)
-        schedulePersist()
+    /// Swaps a pending item with the pending item before it.
+    public func moveUp(_ id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].isPending,
+              let previous = items[..<index].lastIndex(where: \.isPending) else { return }
+        items.swapAt(index, previous)
+        save()
     }
 
-    public func deleteGoal(_ goal: Goal) {
-        goals.removeAll { $0.id == goal.id }
-        reindex()
-        rebuildGoalDerivedState()
-        markDirty(.goals)
-        schedulePersist()
+    /// Makes a pending item the next one to run.
+    public func moveToTop(_ id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].isPending,
+              let first = items.firstIndex(where: \.isPending), first < index else { return }
+        let item = items.remove(at: index)
+        items.insert(item, at: first)
+        save()
     }
 
-    public func setPaused(_ paused: Bool) {
-        settings.sessionFlowPaused = paused
-        statusMessage = paused
-            ? "Relay paused — auto-continue is holding."
-            : "Relay armed — auto-continue is on."
-        markDirty(.settings)
-        schedulePersist()
-        if !paused, settings.autoResumeOnLimitReset || settings.autoContinueOnFinish {
-            Task { await startRelay() }
+    /// Re-queues a finished prompt at the end of the queue.
+    public func runAgain(_ id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].isFinished else { return }
+        let original = items.remove(at: index)
+        var copy = QueueItem(id: original.id, prompt: original.prompt, createdAt: original.createdAt)
+        copy.status = .queued
+        items.append(copy)
+        save()
+        if runState == .running { pump() }
+    }
+
+    public func clearFinished() {
+        items.removeAll(where: \.isFinished)
+        normalizeRunState()
+        save()
+    }
+
+    // MARK: - Running
+
+    public func start() {
+        guard hasPending || runTask != nil else { return }
+        notice = nil
+        consecutiveFailures = 0
+        runState = .running
+        save()
+        pump()
+    }
+
+    /// The current prompt finishes; nothing new starts until `start()`.
+    public func pause() {
+        guard runState == .running else { return }
+        runState = .paused
+        cancelWake()
+        normalizeRunState()
+        save()
+        updateActivity()
+    }
+
+    /// Stops the running prompt now and pauses the queue. The prompt goes back to the queue.
+    public func stopCurrent() {
+        guard let task = runTask else { return }
+        runState = .paused
+        cancelWake()
+        save()
+        task.cancel()
+    }
+
+    /// Skips the rest of a usage-limit wait.
+    public func tryNow() {
+        limit = nil
+        cancelWake()
+        notice = nil
+        if hasPending || runTask != nil { runState = .running }
+        save()
+        pump()
+    }
+
+    /// Call after the Mac wakes: a reset may have passed while it slept.
+    public func systemDidWake() {
+        guard let limit else { return }
+        if now() >= limit.resetsAt {
+            limitWindowElapsed()
+        } else if runState == .running {
+            scheduleWake()
         }
     }
 
-    public func copyComposedPrompt(for goal: Goal? = nil) {
-        let target = goal ?? nextGoal
-        guard let target else {
-            statusMessage = "Nothing to copy — queue a prompt first."
+    /// Call when the app quits: stops the child process but keeps the queue as it was,
+    /// so the interrupted prompt runs again next launch.
+    public func shutdown() {
+        isShuttingDown = true
+        cancelWake()
+        for index in items.indices where items[index].status == .running {
+            items[index].status = .queued
+            items[index].startedAt = nil
+        }
+        save()
+        runTask?.cancel()
+    }
+
+    public func updateSettings(_ mutate: (inout RelaySettings) -> Void) {
+        var next = settings
+        mutate(&next)
+        guard next != settings else { return }
+        let modeChanged = next.conversationMode != settings.conversationMode
+            || next.projectURL != settings.projectURL
+        settings = next
+        if modeChanged {
+            // A thread belongs to one folder and one mode.
+            threadSessionId = nil
+            save()
+        }
+        store.saveSettings(settings)
+    }
+
+    // MARK: - Engine
+
+    private func pump() {
+        guard runState == .running, runTask == nil, !isShuttingDown else {
+            updateActivity()
             return
         }
-        let text = settings.composedPrompt(for: target)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        statusMessage = "Copied “\(target.displayTitle)” to clipboard."
-    }
 
-    public func verifyAPIConnection() async {
-        guard apiKeyPresent else {
-            statusMessage = "Add a Cursor API key in Settings first."
+        guard let index = items.firstIndex(where: \.isPending) else {
+            runState = .stopped
+            cancelWake()
+            save()
+            if doneCount + failedCount > 0 {
+                onEvent?(.queueFinished(done: doneCount, failed: failedCount))
+            }
+            updateActivity()
             return
         }
-        statusMessage = "Checking Cursor API…"
-        do {
-            try await client().verifyConnection()
-            statusMessage = "Cursor API key looks good."
-        } catch {
-            statusMessage = "API check failed: \(error.localizedDescription)"
+
+        if let limit {
+            if now() < limit.resetsAt {
+                if wakeTask == nil { scheduleWake() }
+                updateActivity()
+                return
+            }
+            self.limit = nil
         }
+
+        guard let workingDirectory = settings.projectURL else {
+            pauseWithNotice("Choose a project folder, then resume.")
+            return
+        }
+        let env = environment()
+        guard let executable = locateClaude(settings, env) else {
+            pauseWithNotice("Claude Code wasn’t found. Install it, or set its location in Settings.")
+            return
+        }
+
+        let resume: String?
+        switch settings.conversationMode {
+        case .oneThread: resume = threadSessionId
+        case .fresh: resume = items[index].status == .waiting ? items[index].sessionId : nil
+        }
+
+        items[index].status = .running
+        items[index].startedAt = now()
+        items[index].finishedAt = nil
+        items[index].error = nil
+        items[index].result = nil
+        let item = items[index]
+
+        let invocation = ClaudeInvocation(
+            executable: executable,
+            arguments: ClaudeCommand.arguments(
+                prompt: item.prompt,
+                resumeSessionId: resume,
+                autoMode: settings.autoMode,
+                model: settings.model
+            ),
+            workingDirectory: workingDirectory,
+            environment: env
+        )
+
+        notice = nil
+        save()
+        onEvent?(.promptStarted(item))
+
+        let runner = self.runner
+        let itemID = item.id
+        runTask = Task { [weak self] in
+            let output: Result<ProcessOutput, Error>
+            do {
+                output = .success(try await runner.run(invocation))
+            } catch {
+                output = .failure(error)
+            }
+            let cancelled = Task.isCancelled
+            self?.finish(itemID: itemID, output: output, cancelled: cancelled)
+        }
+        updateActivity()
     }
 
-    public func moveGoals(from source: IndexSet, to destination: Int) {
-        var ordered = orderedGoals
-        ordered.move(fromOffsets: source, toOffset: destination)
-        for (idx, item) in ordered.enumerated() {
-            if let i = goals.firstIndex(where: { $0.id == item.id }) {
-                goals[i].sortIndex = idx
+    private func finish(itemID: UUID, output: Result<ProcessOutput, Error>, cancelled: Bool) {
+        runTask = nil
+        if isShuttingDown { return }
+
+        let outcome: RunOutcome
+        if cancelled {
+            outcome = .cancelled
+        } else {
+            switch output {
+            case .success(let processOutput):
+                outcome = ClaudeOutputParser.parse(processOutput, now: now())
+            case .failure(let error):
+                outcome = .failed(message: error.localizedDescription, sessionId: nil, kind: .launch)
             }
         }
-        rebuildGoalDerivedState()
-        markDirty(.goals)
-        schedulePersist()
+
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+            pump()
+            return
+        }
+
+        let finishedAt = now()
+        switch outcome {
+        case let .success(result, sessionId, durationMs, costUSD):
+            consecutiveFailures = 0
+            items[index].status = .done
+            items[index].result = result
+            items[index].error = nil
+            items[index].sessionId = sessionId ?? items[index].sessionId
+            items[index].finishedAt = finishedAt
+            items[index].durationMs = durationMs ?? elapsedMs(since: items[index].startedAt, until: finishedAt)
+            items[index].costUSD = costUSD
+            rememberThread(sessionId)
+            onEvent?(.promptFinished(items[index]))
+
+        case let .limited(resetsAt, message, sessionId):
+            items[index].status = .waiting
+            items[index].error = message
+            items[index].startedAt = nil
+            if let sessionId { items[index].sessionId = sessionId }
+            rememberThread(sessionId)
+            let state = LimitState(resetsAt: resetsAt, message: message, hitAt: finishedAt)
+            limit = state
+            cancelWake()
+            onEvent?(.limitHit(state))
+
+        case let .failed(message, sessionId, kind):
+            consecutiveFailures += 1
+            items[index].status = .failed
+            items[index].error = message
+            items[index].finishedAt = finishedAt
+            items[index].durationMs = elapsedMs(since: items[index].startedAt, until: finishedAt)
+            if let sessionId { items[index].sessionId = sessionId }
+            rememberThread(sessionId)
+            onEvent?(.promptFailed(items[index]))
+            if kind != .general {
+                pauseWithNotice(message)
+                return
+            }
+            if consecutiveFailures >= Self.maxConsecutiveFailures {
+                pauseWithNotice("\(consecutiveFailures) prompts failed in a row, so Taskit paused. Check the errors, then resume.")
+                return
+            }
+
+        case .cancelled:
+            items[index].status = .queued
+            items[index].startedAt = nil
+        }
+
+        normalizeRunState()
+        save()
+        pump()
     }
 
-    /// Immediate settings mutation (toggles, pickers).
-    public func updateSettings(_ mutate: (inout AppSettings) -> Void) {
-        mutate(&settings)
-        session.windowSeconds = settings.sessionWindowSeconds
-        LaunchAtLogin.setEnabled(settings.launchAtLogin)
-        markDirty(.settings, .session)
-        schedulePersist()
-    }
-
-    /// Debounced settings mutation for free-typing fields — keeps typing smooth and avoids disk thrash.
-    public func updateSettingsDebounced(_ mutate: (inout AppSettings) -> Void) {
-        mutate(&settings)
-        session.windowSeconds = settings.sessionWindowSeconds
-        markDirty(.settings, .session)
-        settingsDebounceTask?.cancel()
-        settingsDebounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.settingsDebounceNanoseconds)
+    private func scheduleWake() {
+        wakeTask?.cancel()
+        guard let limit else {
+            wakeTask = nil
+            return
+        }
+        let delay = max(0, limit.resetsAt.timeIntervalSince(now())) + Self.resetGrace
+        let sleep = self.sleep
+        wakeTask = Task { [weak self] in
+            do {
+                try await sleep(delay)
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
-            self?.schedulePersist()
+            self?.limitWindowElapsed()
         }
     }
 
-    public func startRelay() async {
-        guard !isBusy else { return }
-        if settings.sessionFlowPaused {
-            settings.sessionFlowPaused = false
-            markDirty(.settings)
-        }
-        if session.phase == .cooling, !session.isReadyToDispatch {
-            statusMessage = "Still cooling — \(remainingCoolingLabel()) left."
-            return
-        }
-        if session.phase == .ready || session.phase == .cooling {
-            session.markActive()
-            coolingWakeTask?.cancel()
-            markDirty(.session)
-        }
-        await dispatchNextIfPossible()
+    private func limitWindowElapsed() {
+        wakeTask = nil
+        guard limit != nil else { return }
+        limit = nil
+        save()
+        onEvent?(.limitCleared)
+        pump()
+        updateActivity()
     }
 
-    public func markLimitHit(customHours: Double? = nil) {
-        let hours = customHours ?? settings.sessionWindowHours
-        session.windowSeconds = max(15 * 60, hours * 3600)
-        session.markLimitHit(reason: "Marked manually — waiting for the next window.")
-        if let active = activeGoal, let idx = goals.firstIndex(where: { $0.id == active.id }) {
-            goals[idx].status = .waitingOnLimit
-            rebuildGoalDerivedState()
-            markDirty(.goals)
-        }
-        if let next = queuedGoals.first {
-            NotificationService.shared.scheduleLimitResume(
-                at: session.coolingUntil ?? Date().addingTimeInterval(session.windowSeconds),
-                goalTitle: next.displayTitle
-            )
-        }
-        appendEvent(.init(kind: .limitHit, message: "Session marked as limited. Auto-resume armed."))
-        statusMessage = "Cooling for \(DurationFormat.clock(session.windowSeconds)). Next prompt will fire automatically."
-        if settings.notifyOnLimit {
-            NotificationService.shared.post(
-                title: "Limit window started",
-                body: "Taskit will re-prompt in \(DurationFormat.clock(session.windowSeconds))."
-            )
-        }
-        markDirty(.session, .events)
-        flushPersistenceNow()
-        armCoolingWakeIfNeeded()
+    private func cancelWake() {
+        wakeTask?.cancel()
+        wakeTask = nil
     }
 
-    public func skipGoal(_ goal: Goal) {
-        guard let idx = goals.firstIndex(where: { $0.id == goal.id }) else { return }
-        goals[idx].status = .skipped
-        goals[idx].completedAt = .now
-        rebuildGoalDerivedState()
-        appendEvent(.init(kind: .skipped, message: "Skipped \(goal.displayTitle)", goalId: goal.id))
-        markDirty(.goals, .events)
-        schedulePersist()
+    private func pauseWithNotice(_ message: String) {
+        runState = .paused
+        notice = message
+        cancelWake()
+        normalizeRunState(keepNotice: true)
+        save()
+        updateActivity()
     }
 
-    public func resetDay() {
-        pollTask?.cancel()
-        coolingWakeTask?.cancel()
-        goals = []
-        rebuildGoalDerivedState()
-        session.markIdle()
-        events = []
-        settings.activeAgentId = nil
-        statusMessage = "Fresh day. Queue your prompts."
-        markDirty(.goals, .settings, .session, .events)
-        flushPersistenceNow()
+    private func rememberThread(_ sessionId: String?) {
+        guard settings.conversationMode == .oneThread, let sessionId, !sessionId.isEmpty else { return }
+        threadSessionId = sessionId
     }
 
-    public func openActiveAgent() {
-        guard let urlString = activeGoal?.agentURL ?? goals.last(where: { $0.agentURL != nil })?.agentURL,
-              let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    // MARK: - Scheduling
-
-    private func installWakeObserver() {
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handlePossibleCoolingElapsed()
-            }
+    /// A paused queue with nothing left to do is simply stopped.
+    private func normalizeRunState(keepNotice: Bool = false) {
+        if runState == .paused, runTask == nil, !hasPending, !keepNotice {
+            runState = .stopped
         }
     }
 
-    private func armCoolingWakeIfNeeded() {
-        coolingWakeTask?.cancel()
-        guard session.phase == .cooling, let until = session.coolingUntil else { return }
+    private func updateActivity() {
+        let active = isActive
+        guard active != lastActivity else { return }
+        lastActivity = active
+        onEvent?(.activityChanged(active))
+    }
 
-        let delay = max(0, until.timeIntervalSinceNow)
-        coolingWakeTask = Task { [weak self] in
-            let nanos = UInt64(delay * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanos)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.handlePossibleCoolingElapsed()
-            }
+    private func elapsedMs(since start: Date?, until end: Date) -> Int? {
+        guard let start else { return nil }
+        return Int(end.timeIntervalSince(start) * 1000)
+    }
+
+    private func save() {
+        store.saveSnapshot(QueueSnapshot(
+            items: items,
+            runState: runState,
+            limit: limit,
+            threadSessionId: threadSessionId
+        ))
+    }
+
+    // MARK: - Testing
+
+    /// Waits until no prompt is running (including any the finished one started).
+    func waitForIdle() async {
+        while let task = runTask {
+            await task.value
         }
     }
 
-    private func handlePossibleCoolingElapsed() {
-        guard session.phase == .cooling else { return }
-        guard session.tick() else {
-            armCoolingWakeIfNeeded()
-            return
-        }
-        statusMessage = "Limit cleared — resuming the queue."
-        appendEvent(.init(kind: .resumed, message: "Session ready. Resuming queued prompts."))
-        if settings.notifyOnDispatch {
-            NotificationService.shared.post(
-                title: "Session ready",
-                body: "Taskit is sending the next prompt."
-            )
-        }
-        markDirty(.session, .events)
-        flushPersistenceNow()
-        if settings.autoResumeOnLimitReset, !settings.sessionFlowPaused {
-            Task { await self.dispatchNextIfPossible() }
-        } else if settings.sessionFlowPaused {
-            statusMessage = "Limit cleared — relay is paused. Resume when you’re ready."
-        }
-    }
-
-    // MARK: - Dispatch / poll
-
-    private func dispatchNextIfPossible() async {
-        guard !isBusy else { return }
-        if settings.sessionFlowPaused {
-            statusMessage = "Relay paused — press Start when you want the next prompt."
-            return
-        }
-        guard session.isReadyToDispatch else {
-            statusMessage = "Waiting on limit — \(remainingCoolingLabel())."
-            return
-        }
-        guard apiKeyPresent else {
-            statusMessage = "Add a Cursor API key in Settings to dispatch."
-            return
-        }
-        guard let next = orderedGoals.first(where: { $0.status == .queued || $0.status == .waitingOnLimit }) else {
-            statusMessage = completedCount > 0 ? "All prompts for today are done." : "Queue a prompt to begin."
-            if completedCount > 0, session.phase != .idle {
-                session.phase = .idle
-                markDirty(.session)
-                schedulePersist()
-            }
-            return
-        }
-
-        isBusy = true
-        defer { isBusy = false }
-
-        guard let idx = goals.firstIndex(where: { $0.id == next.id }) else { return }
-        goals[idx].status = .dispatching
-        goals[idx].startedAt = .now
-        goals[idx].lastError = nil
-        rebuildGoalDerivedState()
-        statusMessage = "Sending “\(next.displayTitle)”…"
-        markDirty(.goals)
-        flushPersistenceNow()
-
-        let client = client()
-        let prompt = settings.composedPrompt(for: next)
-
-        do {
-            let agentId: String
-            let runId: String
-            let agentURL: String?
-
-            if settings.dispatchMode == .continueAgent,
-               let existing = settings.activeAgentId,
-               !existing.isEmpty {
-                let envelope = try await client.createRun(agentId: existing, prompt: prompt)
-                agentId = existing
-                runId = envelope.run.id
-                agentURL = "https://cursor.com/agents/\(existing)"
-            } else {
-                let envelope = try await client.createAgent(
-                    prompt: prompt,
-                    name: String(next.displayTitle.prefix(100)),
-                    repositoryURL: settings.repositoryURL.nilIfEmpty,
-                    startingRef: settings.startingRef.nilIfEmpty,
-                    modelId: settings.modelId.nilIfEmpty,
-                    autoCreatePR: settings.autoCreatePR
-                )
-                agentId = envelope.agent.id
-                runId = envelope.run?.id ?? ""
-                agentURL = envelope.agent.url ?? "https://cursor.com/agents/\(agentId)"
-                settings.activeAgentId = agentId
-                markDirty(.settings)
-            }
-
-            goals[idx].status = .running
-            goals[idx].agentId = agentId
-            goals[idx].runId = runId
-            goals[idx].agentURL = agentURL
-            rebuildGoalDerivedState()
-            session.markActive()
-            session.consecutiveDispatches += 1
-            appendEvent(.init(kind: .dispatched, message: "Dispatched \(next.displayTitle)", goalId: next.id))
-            statusMessage = "Running “\(next.displayTitle)”."
-            if settings.notifyOnDispatch {
-                NotificationService.shared.post(
-                    title: "Prompt sent",
-                    body: next.displayTitle
-                )
-            }
-            markDirty(.goals, .session, .events)
-            flushPersistenceNow()
-            startPolling(goalId: next.id, agentId: agentId, runId: runId)
-        } catch CursorAPIClient.APIError.rateLimited(let signal) {
-            await handleLimit(signal, for: next.id)
-        } catch {
-            goals[idx].status = .failed
-            goals[idx].lastError = error.localizedDescription
-            rebuildGoalDerivedState()
-            appendEvent(.init(kind: .failed, message: error.localizedDescription, goalId: next.id))
-            statusMessage = error.localizedDescription
-            if let limit = LimitDetector.detect(in: error.localizedDescription) {
-                await handleLimit(limit, for: next.id)
-            } else {
-                markDirty(.goals, .events)
-                flushPersistenceNow()
-            }
-        }
-    }
-
-    private func handleLimit(_ signal: LimitSignal, for goalId: UUID) async {
-        pollTask?.cancel()
-        if let idx = goals.firstIndex(where: { $0.id == goalId }) {
-            goals[idx].status = .waitingOnLimit
-            goals[idx].lastError = signal.reason
-            rebuildGoalDerivedState()
-        }
-        session.markLimitHit(reason: signal.reason, resetAt: signal.resetAt)
-        appendEvent(.init(kind: .limitHit, message: signal.reason, goalId: goalId))
-        statusMessage = "Hit a limit. Resuming in \(remainingCoolingLabel())."
-        if settings.notifyOnLimit {
-            NotificationService.shared.post(
-                title: "Limit hit",
-                body: "Taskit will continue in \(remainingCoolingLabel())."
-            )
-        }
-        if let coolingUntil = session.coolingUntil,
-           let goal = goals.first(where: { $0.id == goalId }) {
-            NotificationService.shared.scheduleLimitResume(at: coolingUntil, goalTitle: goal.displayTitle)
-        }
-        markDirty(.goals, .session, .events)
-        flushPersistenceNow()
-        armCoolingWakeIfNeeded()
-    }
-
-    private func startPolling(goalId: UUID, agentId: String, runId: String) {
-        pollTask?.cancel()
-        guard !runId.isEmpty else { return }
-        pollBackoffNanoseconds = Self.pollFloorNanoseconds
-        pollTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                let delay = self.pollBackoffNanoseconds
-                try? await Task.sleep(nanoseconds: delay)
-                guard !Task.isCancelled else { return }
-                let shouldContinue = await self.pollOnce(goalId: goalId, agentId: agentId, runId: runId)
-                if !shouldContinue { return }
-            }
-        }
-    }
-
-    private func resumePollingIfNeeded() {
-        guard let active = activeGoal,
-              let agentId = active.agentId,
-              let runId = active.runId,
-              !runId.isEmpty else { return }
-        startPolling(goalId: active.id, agentId: agentId, runId: runId)
-    }
-
-    /// Returns `false` when polling should stop.
-    @discardableResult
-    private func pollOnce(goalId: UUID, agentId: String, runId: String) async -> Bool {
-        do {
-            let envelope = try await client().getRun(agentId: agentId, runId: runId)
-            let status = envelope.run.status.uppercased()
-            guard let idx = goals.firstIndex(where: { $0.id == goalId }) else { return false }
-
-            if Self.successStatuses.contains(status) {
-                goals[idx].status = .completed
-                goals[idx].completedAt = .now
-                rebuildGoalDerivedState()
-                appendEvent(.init(kind: .completed, message: "Finished \(goals[idx].displayTitle)", goalId: goalId))
-                statusMessage = "Finished “\(goals[idx].displayTitle)”."
-                if settings.notifyOnComplete {
-                    NotificationService.shared.post(title: "Goal complete", body: goals[idx].displayTitle)
-                }
-                markDirty(.goals, .events)
-                flushPersistenceNow()
-                pollTask?.cancel()
-                if settings.autoContinueOnFinish, !settings.sessionFlowPaused {
-                    await dispatchNextIfPossible()
-                } else if settings.sessionFlowPaused {
-                    statusMessage = "Finished “\(goals[idx].displayTitle)”. Relay paused."
-                }
-                return false
-            }
-
-            if Self.failureStatuses.contains(status) {
-                goals[idx].status = .failed
-                goals[idx].lastError = "Run \(status.lowercased())"
-                rebuildGoalDerivedState()
-                appendEvent(.init(kind: .failed, message: "Run \(status.lowercased())", goalId: goalId))
-                statusMessage = "Run \(status.lowercased()) for “\(goals[idx].displayTitle)”."
-                markDirty(.goals, .events)
-                flushPersistenceNow()
-                pollTask?.cancel()
-                return false
-            }
-
-            // Still running — stretch the poll interval (fast at first, gentle later).
-            pollBackoffNanoseconds = min(
-                Self.pollCeilNanoseconds,
-                UInt64(Double(pollBackoffNanoseconds) * 1.5)
-            )
-            return true
-        } catch CursorAPIClient.APIError.rateLimited(let signal) {
-            await handleLimit(signal, for: goalId)
-            return false
-        } catch {
-            // Transient network — keep polling, nudge backoff up slightly.
-            pollBackoffNanoseconds = min(
-                Self.pollCeilNanoseconds,
-                UInt64(Double(pollBackoffNanoseconds) * 1.25)
-            )
-            return true
-        }
-    }
-
-    private static let successStatuses: Set<String> = [
-        "FINISHED", "COMPLETED", "SUCCESS", "DONE"
-    ]
-    private static let failureStatuses: Set<String> = [
-        "FAILED", "ERROR", "CANCELLED", "CANCELED", "EXPIRED"
-    ]
-
-    // MARK: - Persistence / derived state
-
-    private func rebuildGoalDerivedState() {
-        orderedGoals = goals.sorted { $0.sortIndex < $1.sortIndex }
-        completedCount = 0
-        queuedCount = 0
-        for goal in goals {
-            switch goal.status {
-            case .completed:
-                completedCount += 1
-            case .queued, .waitingOnLimit:
-                queuedCount += 1
-            default:
-                break
-            }
-        }
-    }
-
-    private func reindex() {
-        for (idx, goal) in orderedGoals.enumerated() {
-            if let i = goals.firstIndex(where: { $0.id == goal.id }) {
-                goals[i].sortIndex = idx
-            }
-        }
-    }
-
-    private func appendEvent(_ event: DispatchEvent) {
-        events.insert(event, at: 0)
-        if events.count > Self.maxEvents {
-            events.removeLast(events.count - Self.maxEvents)
-        }
-    }
-
-    private func markDirty(_ keys: PersistKey...) {
-        dirty.formUnion(keys)
-    }
-
-    private func schedulePersist() {
-        persistTask?.cancel()
-        persistTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.persistDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            self?.flushPersistenceNow()
-        }
-    }
-
-    private func flushPersistenceNow() {
-        persistTask?.cancel()
-        let snapshot = dirty
-        dirty.removeAll(keepingCapacity: true)
-        guard !snapshot.isEmpty else { return }
-
-        if snapshot.contains(.goals) {
-            Persistence.save(goals, to: Persistence.goalsURL)
-        }
-        if snapshot.contains(.settings) {
-            Persistence.save(settings, to: Persistence.settingsURL)
-        }
-        if snapshot.contains(.session) {
-            Persistence.save(session, to: Persistence.sessionURL)
-        }
-        if snapshot.contains(.events) {
-            Persistence.save(events, to: Persistence.eventsURL)
-        }
-    }
-
-    private func client() -> CursorAPIClient {
-        if let cachedClient, cachedClient.apiKey == apiKey {
-            return cachedClient
-        }
-        let fresh = CursorAPIClient(apiKey: apiKey)
-        cachedClient = fresh
-        return fresh
-    }
-
-    private func invalidateClient() {
-        cachedClient = nil
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    func waitForWake() async {
+        if let task = wakeTask { await task.value }
     }
 }

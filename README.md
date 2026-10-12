@@ -1,77 +1,54 @@
 # Taskit
 
-A native macOS menu bar app for asynchronous Cursor goal relays.
+A macOS menu bar app that queues prompts for **Claude Code** and runs them one after another, waiting out usage limits for you.
 
-Queue the prompts you want for the day. When a session finishes — or when a five-hour limit window clears — Taskit sends the next one through the [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/overview), even if you are away from the laptop.
+Queue up the day's work, press Start, and walk away. Taskit sends each prompt to Claude Code in your project folder. When one finishes, it sends the next. When your plan's usage limit hits ("You've hit your session limit · resets 3:45pm"), it waits until the reset and carries on.
 
-## Why
+## How it works
 
-Cursor is excellent for goal-based agent work, but usage windows and finished sessions still need a human to come back and re-prompt. Taskit turns that into a queue:
+Each prompt runs as a headless Claude Code call in the folder you choose:
 
-1. Set an overarching day goal
-2. Stack ordered prompts
-3. Start the relay
-4. Walk away — overnight, meetings, whatever
-5. When the cool-down ends (default **5 hours**, configurable), Taskit fires the next prompt automatically
+```
+claude --output-format json [--resume <session>] [--permission-mode auto] -p "<prompt>"
+```
 
-## Features
+- **One thread** (default): every prompt resumes the previous prompt's session, so Claude keeps the context from earlier steps.
+- **Fresh each time**: every prompt starts a new session.
+- **Usage limits**: Taskit reads the reset time from Claude Code's message, waits until then (plus a minute), and retries the same prompt in the same session. If no time is given, it retries after 30 minutes.
+- **Failures**: a failed prompt is marked and the queue moves on. Taskit pauses instead if Claude Code isn't signed in, can't be found, or three prompts fail in a row.
+- **Quitting mid-run**: the interrupted prompt goes back in the queue and runs again next launch.
 
-- **Menu bar panel** with liquid-glass UI (vibrancy, soft seafoam accent, serif timer)
-- **Day goal + prompt queue** with reorder, edit, skip, requeue, and clear
-- **Bulk paste** a whole day plan (blank lines → separate prompts)
-- **Pause / resume** auto-relay without losing the queue
-- **Copy composed prompt** for desktop Cursor when you want a clipboard handoff
-- **Setup checklist** when API key or queue is missing; **Test** API key in Settings
-- **Session clock** for limit cool-downs (1h / 2h / 5h / 8h / default, or auto-detect `429`)
-- **Auto-resume** when the window clears (unless paused)
-- **Auto-continue** when a Cloud Agent run finishes (unless paused)
-- **Continue one agent** (follow-up runs) or **new agent per goal**
-- **Keychain** storage for your Cursor API key
-- **Notifications** for dispatch, completion, and limit events
-- **Launch at login** (signed `.app` builds)
+Taskit uses your own `claude` login (Pro or Max plan). It removes `ANTHROPIC_API_KEY` from the environment it passes to Claude Code, so runs use your subscription rather than API billing.
+
+## Using it
+
+- **Add prompts**: type in the box at the bottom and press Enter. To add several at once, paste a list: put each prompt on its own line, or separate longer prompts with a blank line.
+- **Reorder or remove**: hover a queued prompt and use the arrow and ✕ buttons. Right-click a prompt for more options.
+- **Pause** (header button): the current prompt finishes, then nothing new starts. To cancel the current prompt immediately, use the stop button on its row; the prompt goes back in the queue.
+- **See what Claude did**: click a finished prompt to show its reply. From there, **Open in Terminal** resumes that session interactively, and **Run again** puts the prompt back in the queue.
+
+The menu bar shows what's happening at a glance: prompts queued (`3`), progress (`2/5`), time left until the limit resets (`2:14`), or `Paused`.
 
 ## Requirements
 
-- macOS 14+
-- Xcode 15+ / Swift 5.9+
-- A Cursor API key from [Dashboard → API Keys](https://cursor.com/dashboard?tab=integrations)
-- A connected repository (optional for no-repo agents)
+- macOS 14 or later
+- [Claude Code](https://code.claude.com/docs/en/setup), installed and signed in
+- Xcode 15 or later (Swift 5.9) to build
 
-## Build & run
-
-```bash
-cd Taskit
-swift build
-swift run Taskit
-```
-
-Or package a menu-bar `.app`:
+## Build and run
 
 ```bash
-chmod +x scripts/build-macos-app.sh
 ./scripts/build-macos-app.sh
 open dist/Taskit.app
 ```
 
-First launch: open **Settings** from the panel, paste your API key, set the repo URL / branch, then queue prompts and hit **Start relay**.
+For development, you can also run it straight from the package with `cd Taskit && swift run Taskit`. Notifications and Open at login only work in the packaged `.app`.
 
-## How the relay works
+On first launch, the panel walks you through setup: it finds `claude`, can check that you're signed in, and asks you to pick a project folder.
 
-```
-Day goal ──► Prompt 1 ──► (running) ──► finished
-                              │
-                         limit hit? ──► cool-down clock ──► Prompt 2
-                              │
-                              └── auto-continue ──────────► Prompt 2
-```
+## Keeping it running overnight
 
-Each dispatch prepends your overarching goal (unless disabled) so follow-ups stay aligned.
-
-## Design preview
-
-Open `design-preview/index.html` in a browser for a static mock of the menu bar panel (useful when you are not on a Mac).
-
-Visual references used while designing: [Tiimo focus](https://mobbin.com/screens/ffeedfca-2932-4798-9f5a-fccdaff4f095), [Oura session](https://mobbin.com/screens/08366dca-8bef-401f-a5d2-2514448fdf7d), [Todoist inbox](https://mobbin.com/screens/da55b0b7-581f-4b7c-90ea-5e1e57da7c21).
+Taskit keeps the Mac awake while prompts are running or waiting on a limit (Settings → Keep the Mac awake). It can't stop sleep when the lid is closed, so keep the lid open or the Mac on power with the display off. Turn on **Open at login** so a queue survives a restart.
 
 ## Tests
 
@@ -80,17 +57,12 @@ cd Taskit
 swift test
 ```
 
-Covers limit-text parsing and session clock transitions.
+The queue logic lives in `TaskitCore`, which only needs Foundation, so the tests also build on Linux. They cover limit and reset-time parsing, Claude output parsing, the queue engine (ordering, pause and stop, limits, failures, relaunch), persistence, and the process runner. CI runs the build, tests, and app packaging on macOS for every pull request.
 
-## Privacy
+## Files
 
-- API keys live in the macOS Keychain (`app.taskit.menubar`)
-- Goals / settings persist under `~/Library/Application Support/Taskit/`
-- Network calls go only to `https://api.cursor.com`
-
-## Note on “five-hour” windows
-
-Cursor’s included usage is primarily monthly. Short rate-limit / cool-down messages still show up in practice, and many people plan overnight work around a ~5 hour gate. Taskit treats that as a **configurable session window**: mark it manually, or let the engine parse reset hints / HTTP 429 from the Cloud Agents API.
+- Queue and settings: `~/Library/Application Support/Taskit/` (`queue.json`, `settings.json`). If a file can't be read, it's renamed to `*.corrupt` rather than overwritten.
+- Taskit makes no network calls itself. Claude Code does the talking to Anthropic.
 
 ## License
 
