@@ -13,11 +13,9 @@ struct TaskitApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Taskit Settings", id: "settings") {
+        Settings {
             SettingsView(app: app)
         }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
     }
 }
 

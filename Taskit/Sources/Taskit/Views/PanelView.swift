@@ -6,7 +6,7 @@ import TaskitCore
 @MainActor
 struct PanelView: View {
     let app: AppModel
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettingsWindow
     @State private var expanded: UUID?
 
     private var engine: RelayEngine { app.engine }
@@ -105,8 +105,8 @@ struct PanelView: View {
     }
 
     private func openSettings() {
-        openWindow(id: "settings")
         NSApp.activate(ignoringOtherApps: true)
+        openSettingsWindow()
     }
 
     // MARK: - Queue
