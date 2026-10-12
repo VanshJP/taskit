@@ -94,14 +94,20 @@ private final class PipeCollector: @unchecked Sendable {
         self.handle = handle
     }
 
-    /// Reads on a background thread until EOF. Blocking reads behave the same on
-    /// every platform, unlike `readabilityHandler`.
+    /// Reads on a background thread until EOF. Uses POSIX `read`, which returns
+    /// whatever is available; `FileHandle.read(upToCount:)` waits for the full
+    /// count on macOS, which would strand output behind a pipe held open by a
+    /// background tool.
     func start() {
         DispatchQueue.global(qos: .utility).async { [self] in
+            let fd = handle.fileDescriptor
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             while true {
-                guard let chunk = try? handle.read(upToCount: 64 * 1024), !chunk.isEmpty else { break }
+                let count = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+                if count < 0, errno == EINTR { continue }
+                guard count > 0 else { break }
                 lock.lock()
-                if !finished { data.append(chunk) }
+                if !finished { data.append(contentsOf: buffer[0..<count]) }
                 lock.unlock()
             }
             eof.signal()
