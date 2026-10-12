@@ -10,24 +10,29 @@ struct GoalRowView: View {
     var onEdit: () -> Void
     var onRequeue: () -> Void
 
+    private var isDimmed: Bool {
+        goal.status == .completed || goal.status == .skipped
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             statusGlyph
                 .frame(width: 22, height: 22)
+                .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(goal.displayTitle)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(goal.status == .completed ? .secondary : .primary)
-                    .strikethrough(goal.status == .completed || goal.status == .skipped)
+                    .foregroundStyle(isDimmed ? TaskitTheme.hush : Color.white.opacity(0.94))
+                    .strikethrough(isDimmed, color: TaskitTheme.hush.opacity(0.5))
                 Text(goal.prompt)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                    .foregroundStyle(TaskitTheme.hush)
                     .lineLimit(2)
                 if let error = goal.lastError, goal.status == .failed || goal.status == .waitingOnLimit {
                     Text(error)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(TaskitTheme.danger.opacity(0.9))
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(TaskitTheme.danger.opacity(0.95))
                         .lineLimit(2)
                 }
             }
@@ -51,14 +56,20 @@ struct GoalRowView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TaskitTheme.hush)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .padding(.horizontal, 4)
+        .background {
+            if goal.status == .running || goal.status == .dispatching {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(TaskitTheme.accent.opacity(0.08))
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(goal.displayTitle), \(goal.status.label)")
     }
@@ -76,6 +87,7 @@ struct GoalRowView: View {
         case .dispatching, .running:
             ProgressView()
                 .controlSize(.small)
+                .tint(TaskitTheme.accent)
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(TaskitTheme.accent)
@@ -85,7 +97,7 @@ struct GoalRowView: View {
         case .skipped:
             Image(systemName: "forward.fill")
                 .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TaskitTheme.hush)
         }
     }
 }

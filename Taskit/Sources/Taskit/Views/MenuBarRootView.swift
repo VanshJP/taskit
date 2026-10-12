@@ -12,27 +12,53 @@ struct MenuBarRootView: View {
     var body: some View {
         ZStack {
             TaskitTheme.atmosphere
-            VStack(spacing: 12) {
-                topBar
-                SessionHeroView(engine: engine)
-                if !engine.readinessIssues.isEmpty {
-                    SetupBannerView(issues: engine.readinessIssues) {
-                        showSettings = true
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    brandBar
+                        .padding(.bottom, 10)
+                        .taskitAppear(delay: 0.0)
+
+                    SessionHeroView(engine: engine)
+                        .padding(.bottom, 18)
+                        .taskitAppear(delay: 0.04)
+
+                    if !engine.readinessIssues.isEmpty {
+                        SetupBannerView(issues: engine.readinessIssues) {
+                            showSettings = true
+                        }
+                        .padding(.bottom, 14)
+                        .taskitAppear(delay: 0.08)
                     }
+
+                    dayGoalSection
+                        .padding(.bottom, 14)
+                        .taskitAppear(delay: 0.1)
+
+                    NextUpView(
+                        goal: engine.nextGoal,
+                        isPaused: engine.isPaused,
+                        onCopy: { engine.copyComposedPrompt() }
+                    )
+                    .padding(.bottom, 14)
+                    .taskitAppear(delay: 0.12)
+
+                    GoalQueueView(engine: engine)
+                        .padding(.bottom, 16)
+                        .taskitAppear(delay: 0.14)
+
+                    actionRow
+                        .padding(.bottom, 12)
+                        .taskitAppear(delay: 0.16)
+
+                    footer
+                        .taskitAppear(delay: 0.18)
                 }
-                overarchingField
-                NextUpView(
-                    goal: engine.nextGoal,
-                    isPaused: engine.isPaused,
-                    onCopy: { engine.copyComposedPrompt() }
-                )
-                GoalQueueView(engine: engine)
-                actionRow
-                footer
+                .padding(16)
             }
-            .padding(14)
         }
-        .frame(width: 360)
+        .frame(width: 372)
+        .frame(maxHeight: 720)
         .sheet(isPresented: $showSettings) {
             SettingsView(engine: engine)
         }
@@ -50,49 +76,65 @@ struct MenuBarRootView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack(spacing: 8) {
+    private var brandBar: some View {
+        HStack(alignment: .center, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [TaskitTheme.accent.opacity(0.9), TaskitTheme.accentDeep],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 28, height: 28)
+                    .shadow(color: TaskitTheme.accent.opacity(0.35), radius: 8, y: 2)
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(red: 0.05, green: 0.1, blue: 0.1))
+            }
+
             Text("Taskit")
-                .font(.system(size: 18, weight: .semibold, design: .serif))
-                .foregroundStyle(.primary)
-            if engine.isPaused {
-                StatusPill(text: "Paused", tone: .cooling)
-            }
-            Spacer()
-            GlassIconButton(
-                systemName: engine.isPaused ? "play.fill" : "pause.fill",
-                help: engine.isPaused ? "Resume auto-relay" : "Pause auto-relay"
-            ) {
-                engine.setPaused(!engine.isPaused)
-            }
-            GlassIconButton(systemName: "doc.on.doc", help: "Copy next composed prompt") {
-                engine.copyComposedPrompt()
-            }
-            GlassIconButton(systemName: "gearshape", help: "Settings") {
-                showSettings = true
-            }
-            GlassIconButton(systemName: "arrow.up.right.square", help: "Open latest agent") {
-                engine.openActiveAgent()
+                .font(TaskitTheme.brandFont)
+                .foregroundStyle(Color.white.opacity(0.96))
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 6) {
+                GlassIconButton(
+                    systemName: engine.isPaused ? "play.fill" : "pause.fill",
+                    help: engine.isPaused ? "Resume auto-relay" : "Pause auto-relay",
+                    emphasized: engine.isPaused
+                ) {
+                    engine.setPaused(!engine.isPaused)
+                }
+                GlassIconButton(systemName: "doc.on.doc", help: "Copy next composed prompt") {
+                    engine.copyComposedPrompt()
+                }
+                GlassIconButton(systemName: "gearshape", help: "Settings") {
+                    showSettings = true
+                }
+                GlassIconButton(systemName: "arrow.up.right.square", help: "Open latest agent") {
+                    engine.openActiveAgent()
+                }
             }
         }
     }
 
-    private var overarchingField: some View {
-        GlassCard(padding: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Day goal")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                TextField("Ship auth end-to-end, keep PRs small…", text: $overarchingDraft, axis: .vertical)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .lineLimit(2...3)
-                    .textFieldStyle(.plain)
-                    .focused($overarchingFocused)
-                    .onChange(of: overarchingDraft) { _, value in
-                        engine.updateSettingsDebounced { $0.overarchingGoal = value }
-                    }
-            }
+    private var dayGoalSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Day goal")
+            TextField("Ship auth end-to-end, keep PRs small…", text: $overarchingDraft, axis: .vertical)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineLimit(2...3)
+                .textFieldStyle(.plain)
+                .focused($overarchingFocused)
+                .onChange(of: overarchingDraft) { _, value in
+                    engine.updateSettingsDebounced { $0.overarchingGoal = value }
+                }
         }
+        .padding(.horizontal, 2)
     }
 
     private var actionRow: some View {
@@ -115,23 +157,19 @@ struct MenuBarRootView: View {
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08), in: Capsule())
-                        .overlay { Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1) }
+                        .foregroundStyle(TaskitTheme.mist)
+                        .background {
+                            Capsule()
+                                .fill(Color.white.opacity(0.06))
+                                .overlay { Capsule().strokeBorder(TaskitTheme.hairline, lineWidth: 1) }
+                        }
                 }
                 .menuStyle(.borderlessButton)
                 .help("Start the cool-down clock. Taskit will re-prompt when it ends.")
 
-                Button {
+                GhostCapsuleButton(title: "Clear day", systemImage: "trash") {
                     confirmClear = true
-                } label: {
-                    Label("Clear day", systemImage: "trash")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08), in: Capsule())
-                        .overlay { Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1) }
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -160,14 +198,14 @@ struct MenuBarRootView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             Circle()
                 .fill(footerDot)
                 .frame(width: 7, height: 7)
-                .shadow(color: footerDot.opacity(0.55), radius: 3)
+                .shadow(color: footerDot.opacity(0.7), radius: 5)
             Text(engine.statusMessage)
                 .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TaskitTheme.hush)
                 .lineLimit(1)
                 .help(engine.statusMessage)
             Spacer()
@@ -177,7 +215,7 @@ struct MenuBarRootView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Color.white.opacity(0.28))
         }
         .padding(.top, 2)
     }
@@ -196,12 +234,12 @@ struct MenuBarRootView: View {
     }
 
     private var footerDot: Color {
-        if engine.isPaused { return TaskitTheme.warmReady.opacity(0.8) }
+        if engine.isPaused { return TaskitTheme.warmReady.opacity(0.85) }
         switch engine.session.phase {
         case .active: return TaskitTheme.accent
         case .ready: return TaskitTheme.warmReady
-        case .cooling: return TaskitTheme.warmReady.opacity(0.7)
-        case .idle: return Color.white.opacity(0.35)
+        case .cooling: return TaskitTheme.warmReady.opacity(0.75)
+        case .idle: return Color.white.opacity(0.3)
         }
     }
 }

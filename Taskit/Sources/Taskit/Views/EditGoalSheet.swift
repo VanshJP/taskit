@@ -12,11 +12,12 @@ struct EditGoalSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Edit prompt")
-                    .font(.system(size: 18, weight: .semibold, design: .serif))
+                    .font(TaskitTheme.brandFont)
+                    .foregroundStyle(Color.white.opacity(0.96))
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TaskitTheme.hush)
             }
 
             TextField("Short title", text: $title)

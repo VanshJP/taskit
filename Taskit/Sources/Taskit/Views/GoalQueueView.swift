@@ -11,49 +11,53 @@ struct GoalQueueView: View {
     @FocusState private var promptFocused: Bool
 
     var body: some View {
-        GlassCard(padding: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Today")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(engine.completedCount) of \(engine.goals.count)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionLabel(text: "Today")
+                Spacer()
+                Text("\(engine.completedCount) of \(engine.goals.count)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TaskitTheme.hush)
+                    .monospacedDigit()
+            }
 
-                if engine.goals.isEmpty && !isComposerExpanded {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(engine.orderedGoals) { goal in
-                            GoalRowView(
-                                goal: goal,
-                                onSkip: { engine.skipGoal(goal) },
-                                onDelete: { engine.deleteGoal(goal) },
-                                onOpen: {
-                                    if let urlString = goal.agentURL, let url = URL(string: urlString) {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                },
-                                onCopy: { engine.copyComposedPrompt(for: goal) },
-                                onEdit: { editingGoal = goal },
-                                onRequeue: { engine.requeueGoal(goal) }
-                            )
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                            .listRowSeparator(.hidden)
+            GlassSurface(cornerRadius: 20, padding: 8) {
+                VStack(spacing: 0) {
+                    if engine.goals.isEmpty && !isComposerExpanded {
+                        emptyState
+                            .padding(.vertical, 18)
+                    } else {
+                        List {
+                            ForEach(engine.orderedGoals) { goal in
+                                GoalRowView(
+                                    goal: goal,
+                                    onSkip: { engine.skipGoal(goal) },
+                                    onDelete: { engine.deleteGoal(goal) },
+                                    onOpen: {
+                                        if let urlString = goal.agentURL, let url = URL(string: urlString) {
+                                            NSWorkspace.shared.open(url)
+                                        }
+                                    },
+                                    onCopy: { engine.copyComposedPrompt(for: goal) },
+                                    onEdit: { editingGoal = goal },
+                                    onRequeue: { engine.requeueGoal(goal) }
+                                )
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+                                .listRowSeparator(.hidden)
+                            }
+                            .onMove(perform: engine.moveGoals)
                         }
-                        .onMove(perform: engine.moveGoals)
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 72, maxHeight: 200)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 80, maxHeight: 220)
-                }
 
-                composer
+                    composer
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 6)
+                        .padding(.top, 4)
+                }
             }
         }
         .sheet(item: $editingGoal) { goal in
@@ -67,16 +71,17 @@ struct GoalQueueView: View {
         VStack(spacing: 8) {
             Image(systemName: "text.badge.plus")
                 .font(.system(size: 22, weight: .light))
-                .foregroundStyle(TaskitTheme.accent.opacity(0.9))
+                .foregroundStyle(TaskitTheme.accent.opacity(0.95))
             Text("Queue prompts for the day")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.92))
             Text("Paste a whole plan — blank lines become separate prompts.")
-                .font(.system(size: 11, weight: .regular, design: .rounded))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                .foregroundStyle(TaskitTheme.hush)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
     }
 
     private var composer: some View {
@@ -92,7 +97,7 @@ struct GoalQueueView: View {
                     if draftPrompt.isEmpty {
                         Text("One prompt, or paste several separated by blank lines…")
                             .font(.system(size: 12, design: .rounded))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.28))
                             .padding(.top, 10)
                             .padding(.leading, 10)
                             .allowsHitTesting(false)
@@ -108,14 +113,14 @@ struct GoalQueueView: View {
 
                 HStack {
                     Button("Cancel") {
-                        withAnimation(.snappy) {
+                        withAnimation(TaskitTheme.springSnappy) {
                             isComposerExpanded = false
                             draftTitle = ""
                             draftPrompt = ""
                         }
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TaskitTheme.hush)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
 
                     Spacer()
@@ -127,16 +132,21 @@ struct GoalQueueView: View {
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(TaskitTheme.accent.opacity(draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1), in: Capsule())
-                            .foregroundStyle(Color.black.opacity(0.85))
+                            .background(
+                                TaskitTheme.accent.opacity(
+                                    draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1
+                                ),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(Color(red: 0.05, green: 0.1, blue: 0.1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableButtonStyle())
                     .disabled(draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.return, modifiers: [.command])
                 }
             } else {
                 Button {
-                    withAnimation(.snappy) {
+                    withAnimation(TaskitTheme.springSnappy) {
                         isComposerExpanded = true
                         promptFocused = true
                     }
@@ -147,15 +157,15 @@ struct GoalQueueView: View {
                         Spacer()
                         Text("⌘V paste plan")
                             .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.28))
                     }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TaskitTheme.hush)
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                            .foregroundStyle(Color.white.opacity(0.18))
+                            .foregroundStyle(Color.white.opacity(0.16))
                     )
                 }
                 .buttonStyle(.plain)
@@ -180,7 +190,7 @@ struct GoalQueueView: View {
         } else {
             engine.addGoal(title: draftTitle, prompt: prompts[0])
         }
-        withAnimation(.snappy) {
+        withAnimation(TaskitTheme.springSnappy) {
             draftTitle = ""
             draftPrompt = ""
             isComposerExpanded = false
@@ -193,7 +203,7 @@ struct GoalQueueView: View {
             guard let string = object as? String else { return }
             Task { @MainActor in
                 if engine.addGoalsFromPaste(string) > 0 {
-                    withAnimation(.snappy) {
+                    withAnimation(TaskitTheme.springSnappy) {
                         isComposerExpanded = false
                     }
                 }

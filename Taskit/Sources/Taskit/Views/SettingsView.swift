@@ -29,18 +29,22 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Taskit")
-                    .font(.system(size: 20, weight: .semibold, design: .serif))
+                    .font(TaskitTheme.brandFont)
+                    .foregroundStyle(Color.white.opacity(0.96))
                 Text("Settings")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TaskitTheme.hush)
             }
             Spacer()
             Button("Done") {
                 engine.persist()
                 dismiss()
             }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(TaskitTheme.accent)
             .keyboardShortcut(.defaultAction)
         }
         .padding(16)
@@ -135,11 +139,9 @@ struct SettingsView: View {
     }
 
     private func settingsCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        GlassCard {
+        GlassSurface(cornerRadius: 20, padding: 14) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                SectionLabel(text: title)
                 content()
             }
         }

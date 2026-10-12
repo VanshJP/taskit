@@ -7,37 +7,38 @@ struct NextUpView: View {
     var onCopy: () -> Void
 
     var body: some View {
-        GlassCard(padding: 12) {
-            HStack(alignment: .top, spacing: 10) {
+        GlassSurface(cornerRadius: 18, padding: 13, emphasized: goal != nil && !isPaused) {
+            HStack(alignment: .center, spacing: 12) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [TaskitTheme.accent, TaskitTheme.warmReady.opacity(0.7)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 3, height: 36)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isPaused ? "Paused · next up" : "Next up")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
+                    SectionLabel(text: isPaused ? "Paused · next" : "Next up")
                     if let goal {
                         Text(goal.displayTitle)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.94))
                             .lineLimit(1)
                         Text(goal.prompt)
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                            .foregroundStyle(TaskitTheme.hush)
                             .lineLimit(2)
                     } else {
                         Text("Queue a prompt to arm the relay.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(TaskitTheme.hush)
                     }
                 }
                 Spacer(minLength: 0)
                 if goal != nil {
-                    Button(action: onCopy) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 28, height: 28)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay { Circle().strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy composed prompt (day goal + next step)")
+                    GlassIconButton(systemName: "doc.on.doc", help: "Copy composed prompt", action: onCopy)
                 }
             }
         }

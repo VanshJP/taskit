@@ -17,51 +17,55 @@ struct SessionHeroView: View {
     private func hero(at now: Date) -> some View {
         let progress = ringProgress(at: now)
         let headline = headline(at: now)
+        let accent = phaseAccent
 
-        return GlassCard {
-            HStack(spacing: 16) {
-                ZStack {
-                    ProgressRing(
-                        progress: progress,
-                        lineWidth: 7,
-                        tint: engine.session.phase == .ready ? TaskitTheme.warmReady : TaskitTheme.accent
-                    )
-                    .frame(width: 78, height: 78)
-                    .animation(.easeInOut(duration: 0.45), value: progress)
+        return VStack(spacing: 18) {
+            HeroRing(
+                progress: progress,
+                phaseAccent: accent,
+                symbol: heroSymbol,
+                fraction: "\(engine.completedCount)/\(max(engine.goals.count, 0))",
+                pulse: engine.session.phase == .active
+            )
+            .animation(TaskitTheme.springSoft, value: progress)
 
-                    VStack(spacing: 2) {
-                        Image(systemName: heroSymbol)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(TaskitTheme.accent)
-                            // Pulse only while a run is live — not for multi-hour cool-downs.
-                            .symbolEffect(
-                                .pulse,
-                                options: .repeating,
-                                isActive: engine.session.phase == .active
-                            )
-                        Text("\(engine.completedCount)/\(engine.goals.count)")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            VStack(spacing: 8) {
+                StatusPill(text: phaseLabel, tone: pillTone)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    StatusPill(text: engine.session.phase.label, tone: pillTone)
-                    Text(headline)
-                        .font(.system(size: 22, weight: .semibold, design: .serif))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text(subline)
-                        .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
+                Text(headline)
+                    .font(TaskitTheme.displayFont)
+                    .foregroundStyle(Color.white.opacity(0.96))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(TaskitTheme.springSnappy, value: headline)
+
+                Text(subline)
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(TaskitTheme.hush)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(maxWidth: 280)
             }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    private var phaseLabel: String {
+        if engine.isPaused { return "Paused" }
+        return engine.session.phase.label
+    }
+
+    private var phaseAccent: Color {
+        if engine.isPaused { return TaskitTheme.warmReady }
+        switch engine.session.phase {
+        case .ready: return TaskitTheme.warmReady
+        case .cooling: return TaskitTheme.warmReady
+        case .active: return TaskitTheme.accent
+        case .idle: return TaskitTheme.accentSoft
         }
     }
 
@@ -87,17 +91,25 @@ struct SessionHeroView: View {
     }
 
     private var subline: String {
+        if engine.isPaused {
+            return "Auto-relay is holding · resume when you want the next prompt"
+        }
         switch engine.session.phase {
         case .cooling:
-            return "Limit window · next prompt fires automatically"
+            return "Limit window · the next prompt fires on its own"
         case .ready:
-            return "Window cleared · relay will continue"
-        case .active, .idle:
+            return "Window cleared · relay continues"
+        case .active:
             return engine.statusMessage
+        case .idle:
+            return engine.queuedCount == 0
+                ? "Queue today’s prompts. Walk away."
+                : engine.statusMessage
         }
     }
 
     private var pillTone: StatusPill.Tone {
+        if engine.isPaused { return .cooling }
         switch engine.session.phase {
         case .active: return .active
         case .ready: return .ready
@@ -107,6 +119,7 @@ struct SessionHeroView: View {
     }
 
     private var heroSymbol: String {
+        if engine.isPaused { return "pause.fill" }
         switch engine.session.phase {
         case .cooling: return "hourglass"
         case .ready: return "sparkles"
