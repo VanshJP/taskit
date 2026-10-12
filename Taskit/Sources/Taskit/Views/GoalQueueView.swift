@@ -189,7 +189,7 @@ struct GoalQueueView: View {
 
     private func handlePasteProviders(_ providers: [NSItemProvider]) {
         guard let provider = providers.first else { return }
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+        _ = provider.loadObject(ofClass: String.self) { object, _ in
             guard let string = object as? String else { return }
             Task { @MainActor in
                 if engine.addGoalsFromPaste(string) > 0 {

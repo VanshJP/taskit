@@ -17,10 +17,14 @@ Cursor is excellent for goal-based agent work, but usage windows and finished se
 ## Features
 
 - **Menu bar panel** with liquid-glass UI (vibrancy, soft seafoam accent, serif timer)
-- **Day goal + prompt queue** with reorder, skip, and clear
-- **Session clock** for limit cool-downs (manual “Limit hit”, or auto-detect from API `429` / limit copy)
-- **Auto-resume** when the window clears
-- **Auto-continue** when a Cloud Agent run finishes
+- **Day goal + prompt queue** with reorder, edit, skip, requeue, and clear
+- **Bulk paste** a whole day plan (blank lines → separate prompts)
+- **Pause / resume** auto-relay without losing the queue
+- **Copy composed prompt** for desktop Cursor when you want a clipboard handoff
+- **Setup checklist** when API key or queue is missing; **Test** API key in Settings
+- **Session clock** for limit cool-downs (1h / 2h / 5h / 8h / default, or auto-detect `429`)
+- **Auto-resume** when the window clears (unless paused)
+- **Auto-continue** when a Cloud Agent run finishes (unless paused)
 - **Continue one agent** (follow-up runs) or **new agent per goal**
 - **Keychain** storage for your Cursor API key
 - **Notifications** for dispatch, completion, and limit events

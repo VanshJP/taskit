@@ -52,9 +52,6 @@ public final class RelayEngine {
     public var readinessIssues: [String] {
         var issues: [String] = []
         if !apiKeyPresent { issues.append("Add a Cursor API key") }
-        if settings.overarchingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            issues.append("Set today’s overarching goal")
-        }
         if queuedCount == 0 { issues.append("Queue at least one prompt") }
         return issues
     }
