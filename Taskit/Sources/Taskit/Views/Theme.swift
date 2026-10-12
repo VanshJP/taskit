@@ -24,6 +24,7 @@ enum TaskitTheme {
     /// Rasterized once — soft blurs are expensive if SwiftUI recomposites them every frame.
     static var atmosphere: some View {
         AtmosphereBackground()
+            .equatable()
     }
 }
 
