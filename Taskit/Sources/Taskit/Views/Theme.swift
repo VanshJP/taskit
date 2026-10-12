@@ -1,31 +1,31 @@
 import SwiftUI
 
 enum TaskitTheme {
-    // Nocturne Tide — ink depth, luminous seafoam, champagne signal.
-    static let accent = Color(red: 0.45, green: 0.86, blue: 0.78)
-    static let accentDeep = Color(red: 0.16, green: 0.52, blue: 0.48)
-    static let accentSoft = Color(red: 0.55, green: 0.78, blue: 0.74)
-    static let warmReady = Color(red: 0.96, green: 0.78, blue: 0.42)
-    static let danger = Color(red: 0.93, green: 0.46, blue: 0.42)
-    static let mist = Color.white.opacity(0.72)
-    static let hush = Color.white.opacity(0.48)
-    static let hairline = Color.white.opacity(0.12)
-    static let glassFill = Color.white.opacity(0.055)
+    // Quiet glass — near-monochrome. A background utility, not a destination.
+    static let accent = Color.white.opacity(0.92)
+    static let accentDeep = Color.white.opacity(0.55)
+    static let accentSoft = Color.white.opacity(0.72)
+    static let warmReady = Color.white.opacity(0.78)
+    static let danger = Color.white.opacity(0.65)
+    static let mist = Color.white.opacity(0.78)
+    static let hush = Color.white.opacity(0.42)
+    static let hairline = Color.white.opacity(0.10)
+    static let glassFill = Color.white.opacity(0.05)
 
-    static let springSnappy = Animation.spring(response: 0.38, dampingFraction: 0.86)
-    static let springSoft = Animation.spring(response: 0.55, dampingFraction: 0.9)
-    static let appear = Animation.spring(response: 0.5, dampingFraction: 0.88)
+    static let springSnappy = Animation.spring(response: 0.36, dampingFraction: 0.9)
+    static let springSoft = Animation.spring(response: 0.5, dampingFraction: 0.92)
+    static let appear = Animation.easeOut(duration: 0.28)
 
     static var brandFont: Font {
-        .system(size: 28, weight: .semibold, design: .serif)
+        .system(size: 22, weight: .semibold, design: .default)
     }
 
     static var displayFont: Font {
-        .system(size: 34, weight: .semibold, design: .serif)
+        .system(size: 30, weight: .medium, design: .default)
     }
 
     static var bodyFont: Font {
-        .system(size: 12.5, weight: .medium, design: .rounded)
+        .system(size: 12.5, weight: .regular, design: .default)
     }
 
     static var atmosphere: some View {
@@ -39,54 +39,32 @@ enum TaskitTheme {
 private struct AtmosphereBackground: View, Equatable {
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.07, green: 0.10, blue: 0.12),
-                    Color(red: 0.05, green: 0.07, blue: 0.09),
-                    Color(red: 0.08, green: 0.11, blue: 0.13)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(red: 0.08, green: 0.08, blue: 0.085)
 
-            // Soft luminous orbs — depth without purple/glow cliché overload.
+            // Barely-there soft light — no color cast.
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [TaskitTheme.accent.opacity(0.34), .clear],
+                        colors: [Color.white.opacity(0.06), .clear],
                         center: .center,
-                        startRadius: 4,
+                        startRadius: 10,
+                        endRadius: 160
+                    )
+                )
+                .frame(width: 300, height: 300)
+                .offset(x: 90, y: -120)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.white.opacity(0.035), .clear],
+                        center: .center,
+                        startRadius: 8,
                         endRadius: 140
                     )
                 )
-                .frame(width: 280, height: 280)
-                .offset(x: 120, y: -100)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [TaskitTheme.warmReady.opacity(0.16), .clear],
-                        center: .center,
-                        startRadius: 2,
-                        endRadius: 120
-                    )
-                )
-                .frame(width: 240, height: 240)
-                .offset(x: -110, y: 160)
-
-            // Fine grain so glass never feels flat.
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.04),
-                            .clear,
-                            Color.white.opacity(0.02)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .frame(width: 260, height: 260)
+                .offset(x: -100, y: 150)
         }
         .ignoresSafeArea()
         .drawingGroup()
@@ -97,7 +75,7 @@ private struct AtmosphereBackground: View, Equatable {
 // MARK: - Glass primitives
 
 struct GlassSurface<Content: View>: View {
-    var cornerRadius: CGFloat = 22
+    var cornerRadius: CGFloat = 18
     var padding: CGFloat = 14
     var emphasized = false
     @ViewBuilder var content: () -> Content
@@ -110,34 +88,12 @@ struct GlassSurface<Content: View>: View {
                     .fill(.ultraThinMaterial)
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(emphasized ? 0.14 : 0.09),
-                                        Color.white.opacity(0.02),
-                                        TaskitTheme.accent.opacity(emphasized ? 0.08 : 0.03)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(Color.white.opacity(emphasized ? 0.07 : 0.04))
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.28),
-                                        Color.white.opacity(0.06),
-                                        Color.white.opacity(0.14)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                            .strokeBorder(Color.white.opacity(emphasized ? 0.16 : 0.10), lineWidth: 1)
                     }
-                    .shadow(color: .black.opacity(0.22), radius: emphasized ? 18 : 10, y: emphasized ? 10 : 6)
             }
     }
 }
@@ -161,22 +117,14 @@ struct GlassIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(emphasized ? TaskitTheme.accent : TaskitTheme.mist)
-                .frame(width: 30, height: 30)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(emphasized ? Color.white.opacity(0.9) : TaskitTheme.hush)
+                .frame(width: 28, height: 28)
                 .background {
                     Circle()
-                        .fill(.ultraThinMaterial)
+                        .fill(Color.white.opacity(0.06))
                         .overlay {
-                            Circle()
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.28), Color.white.opacity(0.08)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
+                            Circle().strokeBorder(TaskitTheme.hairline, lineWidth: 1)
                         }
                 }
         }
@@ -196,42 +144,21 @@ struct PrimaryGlassButton: View {
             HStack(spacing: 8) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 Text(title)
-                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .default))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .foregroundStyle(isProminent ? Color(red: 0.05, green: 0.10, blue: 0.10) : TaskitTheme.mist)
+            .padding(.vertical, 11)
+            .foregroundStyle(isProminent ? Color.black.opacity(0.82) : TaskitTheme.mist)
             .background {
                 Capsule(style: .continuous)
-                    .fill(
-                        isProminent
-                        ? AnyShapeStyle(
-                            LinearGradient(
-                                colors: [
-                                    TaskitTheme.accent.opacity(1),
-                                    TaskitTheme.accentSoft.opacity(0.92)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                          )
-                        : AnyShapeStyle(Color.white.opacity(0.07))
-                    )
+                    .fill(isProminent ? Color.white.opacity(0.92) : Color.white.opacity(0.07))
                     .overlay {
                         Capsule(style: .continuous)
-                            .strokeBorder(
-                                Color.white.opacity(isProminent ? 0.35 : 0.14),
-                                lineWidth: 1
-                            )
+                            .strokeBorder(Color.white.opacity(isProminent ? 0.2 : 0.1), lineWidth: 1)
                     }
-                    .shadow(
-                        color: isProminent ? TaskitTheme.accent.opacity(0.28) : .clear,
-                        radius: 14,
-                        y: 6
-                    )
             }
         }
         .buttonStyle(PressableButtonStyle())
@@ -246,16 +173,15 @@ struct GhostCapsuleButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .medium, design: .default))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .foregroundStyle(TaskitTheme.mist)
                 .background {
                     Capsule()
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.white.opacity(0.05))
                         .overlay {
-                            Capsule()
-                                .strokeBorder(TaskitTheme.hairline, lineWidth: 1)
+                            Capsule().strokeBorder(TaskitTheme.hairline, lineWidth: 1)
                         }
                 }
         }
@@ -266,9 +192,8 @@ struct GhostCapsuleButton: View {
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(TaskitTheme.springSnappy, value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -279,7 +204,6 @@ struct AppearModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : 8)
             .onAppear {
                 withAnimation(TaskitTheme.appear.delay(delay)) {
                     shown = true
@@ -298,8 +222,8 @@ struct SectionLabel: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .tracking(1.1)
+            .font(.system(size: 10, weight: .medium, design: .default))
+            .tracking(0.8)
             .foregroundStyle(TaskitTheme.hush)
     }
 }
