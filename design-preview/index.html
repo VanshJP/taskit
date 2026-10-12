@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Taskit — menu bar preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #59b8ad;
+      --accent-deep: #2e7a75;
+      --warm: #edb861;
+      --danger: #e66b61;
+      --ink: rgba(255,255,255,0.92);
+      --hush: rgba(255,255,255,0.55);
+      --glass: rgba(255,255,255,0.07);
+      --stroke: rgba(255,255,255,0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 500px at 70% 10%, rgba(89,184,173,0.18), transparent 60%),
+        radial-gradient(700px 420px at 15% 85%, rgba(237,184,97,0.12), transparent 55%),
+        linear-gradient(160deg, #101619 0%, #0b1012 45%, #12181a 100%);
+      display: grid;
+      place-items: center;
+      padding: 48px 24px 64px;
+    }
+    .desktop {
+      width: min(980px, 100%);
+      position: relative;
+    }
+    .menubar {
+      height: 28px;
+      border-radius: 10px 10px 0 0;
+      background: rgba(20,24,26,0.72);
+      backdrop-filter: blur(18px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.78);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-bottom: none;
+    }
+    .menubar .brand { display: flex; gap: 14px; align-items: center; }
+    .menubar .taskit {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 2px 8px; border-radius: 999px;
+      background: rgba(89,184,173,0.18);
+      color: #b7ebe4;
+      font-weight: 500;
+    }
+    .stage {
+      position: relative;
+      height: 620px;
+      border-radius: 0 0 18px 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.03), transparent 30%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"),
+        #151a1c;
+      overflow: hidden;
+    }
+    .wallpaper {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 30% 40%, rgba(89,184,173,0.15), transparent 35%),
+        radial-gradient(circle at 75% 60%, rgba(237,184,97,0.1), transparent 40%),
+        linear-gradient(135deg, #1a2224, #0e1315 60%, #182022);
+    }
+    .panel {
+      position: absolute;
+      top: 18px;
+      right: 48px;
+      width: 360px;
+      padding: 14px;
+      border-radius: 22px;
+      background: rgba(18, 24, 26, 0.55);
+      backdrop-filter: blur(28px) saturate(140%);
+      border: 1px solid var(--stroke);
+      box-shadow:
+        0 30px 80px rgba(0,0,0,0.45),
+        inset 0 1px 0 rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      animation: rise 700ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+      to { opacity: 1; transform: none; }
+    }
+    .top {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-size: 20px;
+      letter-spacing: 0.2px;
+    }
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.06);
+      display: grid; place-items: center;
+      color: var(--hush);
+      font-size: 12px;
+    }
+    .icons { display: flex; gap: 8px; }
+    .card {
+      border-radius: 18px;
+      padding: 14px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 55%, rgba(89,184,173,0.08));
+      border: 1px solid var(--stroke);
+    }
+    .hero { display: flex; gap: 16px; align-items: center; }
+    .ring {
+      width: 78px; height: 78px; border-radius: 50%;
+      background:
+        radial-gradient(circle at center, rgba(18,24,26,0.9) 58%, transparent 59%),
+        conic-gradient(from -90deg, rgba(89,184,173,0.35), var(--accent), var(--warm) 70%, rgba(255,255,255,0.1) 70%);
+      display: grid; place-items: center;
+      position: relative;
+      animation: breathe 3.2s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { filter: drop-shadow(0 0 0 rgba(89,184,173,0)); }
+      50% { filter: drop-shadow(0 0 12px rgba(89,184,173,0.35)); }
+    }
+    .ring-inner { text-align: center; }
+    .ring-inner small { display: block; color: var(--hush); font-size: 10px; margin-top: 2px; }
+    .pill {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(237,184,97,0.22);
+      color: #f0d7a0;
+      margin-bottom: 6px;
+    }
+    .headline {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-size: 26px;
+      line-height: 1.05;
+      margin: 0 0 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .sub { margin: 0; color: var(--hush); font-size: 12px; line-height: 1.4; }
+    label.meta {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--hush);
+      margin-bottom: 8px;
+      text-transform: none;
+      letter-spacing: 0.02em;
+    }
+    .day-goal {
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+    .queue-head {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; color: var(--hush); margin-bottom: 8px;
+    }
+    .goal {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .goal:last-of-type { border-bottom: none; }
+    .dot {
+      width: 14px; height: 14px; margin-top: 3px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.28);
+    }
+    .dot.done {
+      border: none;
+      background: var(--accent);
+      box-shadow: inset 0 0 0 3px rgba(18,24,26,0.9);
+    }
+    .dot.wait {
+      border-color: var(--warm);
+      background: rgba(237,184,97,0.2);
+    }
+    .goal h4 { margin: 0 0 3px; font-size: 13px; font-weight: 600; }
+    .goal p { margin: 0; font-size: 11px; color: var(--hush); line-height: 1.35; }
+    .add {
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.18);
+      color: var(--hush);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .actions { display: flex; flex-direction: column; gap: 8px; }
+    .primary {
+      appearance: none; border: 0; cursor: default;
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: rgba(0,0,0,0.86);
+      font-weight: 600;
+      font-size: 13px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .ghost {
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+    }
+    .footer {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--hush);
+    }
+    .live {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--warm);
+      box-shadow: 0 0 8px rgba(237,184,97,0.8);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.85); opacity: 0.7; }
+    }
+    .caption {
+      margin-top: 18px;
+      text-align: center;
+      color: rgba(255,255,255,0.5);
+      font-size: 13px;
+    }
+    .caption strong {
+      color: rgba(255,255,255,0.82);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="desktop">
+    <div class="menubar">
+      <div class="brand">
+        <span>􀣺</span>
+        <span>Finder</span>
+        <span>File</span>
+        <span>Edit</span>
+      </div>
+      <div class="taskit">✦ Taskit · 4:12:08</div>
+    </div>
+    <div class="stage">
+      <div class="wallpaper"></div>
+      <aside class="panel" aria-label="Taskit menu bar panel">
+        <div class="top">
+          <div class="logo">Taskit</div>
+          <div class="icons">
+            <div class="icon-btn">⚙</div>
+            <div class="icon-btn">↗</div>
+          </div>
+        </div>
+
+        <section class="card hero">
+          <div class="ring">
+            <div class="ring-inner">
+              <div>⏳</div>
+              <small>1/4</small>
+            </div>
+          </div>
+          <div>
+            <div class="pill">Cooling</div>
+            <h2 class="headline">4:12:08</h2>
+            <p class="sub">Limit window · next prompt fires automatically</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <label class="meta">Day goal</label>
+          <div class="day-goal">Ship billing end-to-end. Keep PRs small and green.</div>
+        </section>
+
+        <section class="card">
+          <div class="queue-head">
+            <span>Today</span>
+            <span>1 of 4</span>
+          </div>
+          <div class="goal">
+            <div class="dot done"></div>
+            <div>
+              <h4>Invoice PDF export</h4>
+              <p>Add PDF export on the invoice detail page with tests.</p>
+            </div>
+          </div>
+          <div class="goal">
+            <div class="dot wait"></div>
+            <div>
+              <h4>Webhook retries</h4>
+              <p>Continue: harden Stripe webhook retries and idempotency.</p>
+            </div>
+          </div>
+          <div class="goal">
+            <div class="dot"></div>
+            <div>
+              <h4>Admin refund flow</h4>
+              <p>Build refund UI for support, wire to existing API.</p>
+            </div>
+          </div>
+          <div class="add">＋ Add prompt</div>
+        </section>
+
+        <div class="actions">
+          <button class="primary">Waiting · 4:12:08</button>
+          <div class="row">
+            <div class="ghost">⌛ Limit hit</div>
+            <div class="ghost">Clear day</div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <span class="live"></span>
+          Cooling for 5 hours. Next prompt will fire automatically.
+        </div>
+      </aside>
+    </div>
+    <p class="caption"><strong>Taskit</strong> — queue today’s prompts, then walk away. When the session window clears, the next one goes out on its own.</p>
+  </div>
+</body>
+</html>
