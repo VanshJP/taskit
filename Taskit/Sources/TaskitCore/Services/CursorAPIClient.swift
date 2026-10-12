@@ -196,6 +196,17 @@ public struct CursorAPIClient: Sendable {
         return Agent(id: value.id, name: value.name, status: value.status, url: value.url)
     }
 
+    /// Lightweight auth/connectivity check — list one agent page.
+    public func verifyConnection() async throws {
+        struct AgentList: Decodable { var agents: [Agent]? }
+        _ = try await send(
+            path: "/v1/agents?limit=1",
+            method: "GET",
+            body: Optional<String>.none,
+            decode: AgentList.self
+        )
+    }
+
     private func send<Body: Encodable, Response: Decodable>(
         path: String,
         method: String,

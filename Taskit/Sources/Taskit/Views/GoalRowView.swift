@@ -6,6 +6,9 @@ struct GoalRowView: View {
     var onSkip: () -> Void
     var onDelete: () -> Void
     var onOpen: () -> Void
+    var onCopy: () -> Void
+    var onEdit: () -> Void
+    var onRequeue: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -32,12 +35,18 @@ struct GoalRowView: View {
             Spacer(minLength: 0)
 
             Menu {
+                Button("Edit…", action: onEdit)
+                Button("Copy composed prompt", action: onCopy)
                 if goal.agentURL != nil {
                     Button("Open in Cursor", action: onOpen)
                 }
                 if goal.status == .queued || goal.status == .waitingOnLimit {
                     Button("Skip", action: onSkip)
                 }
+                if goal.status == .failed || goal.status == .skipped || goal.status == .completed {
+                    Button("Requeue", action: onRequeue)
+                }
+                Divider()
                 Button("Delete", role: .destructive, action: onDelete)
             } label: {
                 Image(systemName: "ellipsis")
@@ -50,6 +59,8 @@ struct GoalRowView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(goal.displayTitle), \(goal.status.label)")
     }
 
     @ViewBuilder

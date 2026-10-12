@@ -43,6 +43,22 @@ public final class RelayEngine {
         orderedGoals.first { $0.status == .running || $0.status == .dispatching }
     }
 
+    public var nextGoal: Goal? {
+        orderedGoals.first { $0.status == .queued || $0.status == .waitingOnLimit }
+    }
+
+    public var isPaused: Bool { settings.sessionFlowPaused }
+
+    public var readinessIssues: [String] {
+        var issues: [String] = []
+        if !apiKeyPresent { issues.append("Add a Cursor API key") }
+        if settings.overarchingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            issues.append("Set today’s overarching goal")
+        }
+        if queuedCount == 0 { issues.append("Queue at least one prompt") }
+        return issues
+    }
+
     public init() {
         reload()
         installWakeObserver()
@@ -128,12 +144,95 @@ public final class RelayEngine {
         schedulePersist()
     }
 
+    @discardableResult
+    public func addGoalsFromPaste(_ raw: String) -> Int {
+        let prompts = PromptBulkImport.prompts(from: raw)
+        guard !prompts.isEmpty else { return 0 }
+        var nextIndex = (goals.map(\.sortIndex).max() ?? -1) + 1
+        for prompt in prompts {
+            let goal = Goal(
+                title: PromptBulkImport.titleHint(for: prompt),
+                prompt: prompt,
+                sortIndex: nextIndex
+            )
+            goals.append(goal)
+            nextIndex += 1
+        }
+        rebuildGoalDerivedState()
+        statusMessage = prompts.count == 1
+            ? "Added “\(PromptBulkImport.titleHint(for: prompts[0]))”."
+            : "Added \(prompts.count) prompts from paste."
+        markDirty(.goals)
+        schedulePersist()
+        return prompts.count
+    }
+
+    public func updateGoal(_ goal: Goal, title: String, prompt: String) {
+        guard let idx = goals.firstIndex(where: { $0.id == goal.id }) else { return }
+        goals[idx].title = title
+        goals[idx].prompt = prompt
+        rebuildGoalDerivedState()
+        statusMessage = "Updated “\(goals[idx].displayTitle)”."
+        markDirty(.goals)
+        schedulePersist()
+    }
+
+    public func requeueGoal(_ goal: Goal) {
+        guard let idx = goals.firstIndex(where: { $0.id == goal.id }) else { return }
+        goals[idx].status = .queued
+        goals[idx].lastError = nil
+        goals[idx].completedAt = nil
+        goals[idx].startedAt = nil
+        rebuildGoalDerivedState()
+        statusMessage = "Requeued “\(goals[idx].displayTitle)”."
+        markDirty(.goals)
+        schedulePersist()
+    }
+
     public func deleteGoal(_ goal: Goal) {
         goals.removeAll { $0.id == goal.id }
         reindex()
         rebuildGoalDerivedState()
         markDirty(.goals)
         schedulePersist()
+    }
+
+    public func setPaused(_ paused: Bool) {
+        settings.sessionFlowPaused = paused
+        statusMessage = paused
+            ? "Relay paused — auto-continue is holding."
+            : "Relay armed — auto-continue is on."
+        markDirty(.settings)
+        schedulePersist()
+        if !paused, settings.autoResumeOnLimitReset || settings.autoContinueOnFinish {
+            Task { await startRelay() }
+        }
+    }
+
+    public func copyComposedPrompt(for goal: Goal? = nil) {
+        let target = goal ?? nextGoal
+        guard let target else {
+            statusMessage = "Nothing to copy — queue a prompt first."
+            return
+        }
+        let text = settings.composedPrompt(for: target)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        statusMessage = "Copied “\(target.displayTitle)” to clipboard."
+    }
+
+    public func verifyAPIConnection() async {
+        guard apiKeyPresent else {
+            statusMessage = "Add a Cursor API key in Settings first."
+            return
+        }
+        statusMessage = "Checking Cursor API…"
+        do {
+            try await client().verifyConnection()
+            statusMessage = "Cursor API key looks good."
+        } catch {
+            statusMessage = "API check failed: \(error.localizedDescription)"
+        }
     }
 
     public func moveGoals(from source: IndexSet, to destination: Int) {
@@ -173,6 +272,10 @@ public final class RelayEngine {
 
     public func startRelay() async {
         guard !isBusy else { return }
+        if settings.sessionFlowPaused {
+            settings.sessionFlowPaused = false
+            markDirty(.settings)
+        }
         if session.phase == .cooling, !session.isReadyToDispatch {
             statusMessage = "Still cooling — \(remainingCoolingLabel()) left."
             return
@@ -287,8 +390,10 @@ public final class RelayEngine {
         }
         markDirty(.session, .events)
         flushPersistenceNow()
-        if settings.autoResumeOnLimitReset {
+        if settings.autoResumeOnLimitReset, !settings.sessionFlowPaused {
             Task { await self.dispatchNextIfPossible() }
+        } else if settings.sessionFlowPaused {
+            statusMessage = "Limit cleared — relay is paused. Resume when you’re ready."
         }
     }
 
@@ -296,6 +401,10 @@ public final class RelayEngine {
 
     private func dispatchNextIfPossible() async {
         guard !isBusy else { return }
+        if settings.sessionFlowPaused {
+            statusMessage = "Relay paused — press Start when you want the next prompt."
+            return
+        }
         guard session.isReadyToDispatch else {
             statusMessage = "Waiting on limit — \(remainingCoolingLabel())."
             return
@@ -461,8 +570,10 @@ public final class RelayEngine {
                 markDirty(.goals, .events)
                 flushPersistenceNow()
                 pollTask?.cancel()
-                if settings.autoContinueOnFinish {
+                if settings.autoContinueOnFinish, !settings.sessionFlowPaused {
                     await dispatchNextIfPossible()
+                } else if settings.sessionFlowPaused {
+                    statusMessage = "Finished “\(goals[idx].displayTitle)”. Relay paused."
                 }
                 return false
             }

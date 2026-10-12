@@ -60,6 +60,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Save key", action: saveKey)
+                Button("Test") {
+                    Task { await engine.verifyAPIConnection() }
+                }
+                .disabled(!engine.apiKeyPresent)
             }
             TextField("Repository URL", text: binding(\.repositoryURL, debounce: true))
                 .textFieldStyle(.roundedBorder)
@@ -98,6 +102,10 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             Toggle("Continue when a run finishes", isOn: binding(\.autoContinueOnFinish))
             Toggle("Resume when the limit window clears", isOn: binding(\.autoResumeOnLimitReset))
+            Toggle("Pause auto-relay", isOn: binding(\.sessionFlowPaused))
+            Text("Pause holds the queue after finishes or cool-downs until you resume.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

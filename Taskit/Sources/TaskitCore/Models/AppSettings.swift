@@ -1,6 +1,6 @@
 import Foundation
 
-public enum DispatchMode: String, Codable, CaseIterable, Identifiable {
+public enum DispatchMode: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Keep one durable Cloud Agent and send follow-up runs.
     case continueAgent
     /// Start a fresh Cloud Agent for each goal.
@@ -25,7 +25,7 @@ public enum DispatchMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-public struct AppSettings: Codable, Equatable {
+public struct AppSettings: Codable, Equatable, Sendable {
     public var overarchingGoal: String
     public var repositoryURL: String
     public var startingRef: String
@@ -34,6 +34,7 @@ public struct AppSettings: Codable, Equatable {
     public var dispatchMode: DispatchMode
     public var autoContinueOnFinish: Bool
     public var autoResumeOnLimitReset: Bool
+    public var sessionFlowPaused: Bool
     public var sessionWindowHours: Double
     public var prependOverarchingGoal: Bool
     public var launchAtLogin: Bool
@@ -51,6 +52,7 @@ public struct AppSettings: Codable, Equatable {
         dispatchMode: DispatchMode,
         autoContinueOnFinish: Bool,
         autoResumeOnLimitReset: Bool,
+        sessionFlowPaused: Bool = false,
         sessionWindowHours: Double,
         prependOverarchingGoal: Bool,
         launchAtLogin: Bool,
@@ -67,6 +69,7 @@ public struct AppSettings: Codable, Equatable {
         self.dispatchMode = dispatchMode
         self.autoContinueOnFinish = autoContinueOnFinish
         self.autoResumeOnLimitReset = autoResumeOnLimitReset
+        self.sessionFlowPaused = sessionFlowPaused
         self.sessionWindowHours = sessionWindowHours
         self.prependOverarchingGoal = prependOverarchingGoal
         self.launchAtLogin = launchAtLogin
@@ -85,6 +88,7 @@ public struct AppSettings: Codable, Equatable {
         dispatchMode: .continueAgent,
         autoContinueOnFinish: true,
         autoResumeOnLimitReset: true,
+        sessionFlowPaused: false,
         sessionWindowHours: 5,
         prependOverarchingGoal: true,
         launchAtLogin: true,
@@ -98,6 +102,11 @@ public struct AppSettings: Codable, Equatable {
         max(15 * 60, sessionWindowHours * 60 * 60)
     }
 
+    public var isConfiguredForDispatch: Bool {
+        // Repo is optional (no-repo agents), but an API key is required by the engine separately.
+        true
+    }
+
     public func composedPrompt(for goal: Goal) -> String {
         let body = goal.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let umbrella = overarchingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,5 +118,32 @@ public struct AppSettings: Codable, Equatable {
         Next prompt to execute now:
         \(body)
         """
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case overarchingGoal, repositoryURL, startingRef, modelId
+        case autoCreatePR, dispatchMode, autoContinueOnFinish, autoResumeOnLimitReset
+        case sessionFlowPaused, sessionWindowHours, prependOverarchingGoal
+        case launchAtLogin, notifyOnDispatch, notifyOnComplete, notifyOnLimit, activeAgentId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        overarchingGoal = try c.decodeIfPresent(String.self, forKey: .overarchingGoal) ?? ""
+        repositoryURL = try c.decodeIfPresent(String.self, forKey: .repositoryURL) ?? ""
+        startingRef = try c.decodeIfPresent(String.self, forKey: .startingRef) ?? "main"
+        modelId = try c.decodeIfPresent(String.self, forKey: .modelId) ?? ""
+        autoCreatePR = try c.decodeIfPresent(Bool.self, forKey: .autoCreatePR) ?? true
+        dispatchMode = try c.decodeIfPresent(DispatchMode.self, forKey: .dispatchMode) ?? .continueAgent
+        autoContinueOnFinish = try c.decodeIfPresent(Bool.self, forKey: .autoContinueOnFinish) ?? true
+        autoResumeOnLimitReset = try c.decodeIfPresent(Bool.self, forKey: .autoResumeOnLimitReset) ?? true
+        sessionFlowPaused = try c.decodeIfPresent(Bool.self, forKey: .sessionFlowPaused) ?? false
+        sessionWindowHours = try c.decodeIfPresent(Double.self, forKey: .sessionWindowHours) ?? 5
+        prependOverarchingGoal = try c.decodeIfPresent(Bool.self, forKey: .prependOverarchingGoal) ?? true
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
+        notifyOnDispatch = try c.decodeIfPresent(Bool.self, forKey: .notifyOnDispatch) ?? true
+        notifyOnComplete = try c.decodeIfPresent(Bool.self, forKey: .notifyOnComplete) ?? true
+        notifyOnLimit = try c.decodeIfPresent(Bool.self, forKey: .notifyOnLimit) ?? true
+        activeAgentId = try c.decodeIfPresent(String.self, forKey: .activeAgentId)
     }
 }

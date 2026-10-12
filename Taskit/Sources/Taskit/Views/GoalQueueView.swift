@@ -7,6 +7,7 @@ struct GoalQueueView: View {
     @State private var draftTitle = ""
     @State private var draftPrompt = ""
     @State private var isComposerExpanded = false
+    @State private var editingGoal: Goal?
     @FocusState private var promptFocused: Bool
 
     var body: some View {
@@ -36,7 +37,10 @@ struct GoalQueueView: View {
                                     if let urlString = goal.agentURL, let url = URL(string: urlString) {
                                         NSWorkspace.shared.open(url)
                                     }
-                                }
+                                },
+                                onCopy: { engine.copyComposedPrompt(for: goal) },
+                                onEdit: { editingGoal = goal },
+                                onRequeue: { engine.requeueGoal(goal) }
                             )
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -52,6 +56,11 @@ struct GoalQueueView: View {
                 composer
             }
         }
+        .sheet(item: $editingGoal) { goal in
+            EditGoalSheet(goal: goal) { title, prompt in
+                engine.updateGoal(goal, title: title, prompt: prompt)
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -61,7 +70,7 @@ struct GoalQueueView: View {
                 .foregroundStyle(TaskitTheme.accent.opacity(0.9))
             Text("Queue prompts for the day")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Text("When a five-hour window clears, Taskit sends the next one — even if you’re away.")
+            Text("Paste a whole plan — blank lines become separate prompts.")
                 .font(.system(size: 11, weight: .regular, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -81,7 +90,7 @@ struct GoalQueueView: View {
 
                 ZStack(alignment: .topLeading) {
                     if draftPrompt.isEmpty {
-                        Text("What should the agent do next?")
+                        Text("One prompt, or paste several separated by blank lines…")
                             .font(.system(size: 12, design: .rounded))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 10)
@@ -90,7 +99,7 @@ struct GoalQueueView: View {
                     }
                     TextEditor(text: $draftPrompt)
                         .font(.system(size: 12, design: .rounded))
-                        .frame(minHeight: 64, maxHeight: 96)
+                        .frame(minHeight: 72, maxHeight: 110)
                         .scrollContentBackground(.hidden)
                         .focused($promptFocused)
                 }
@@ -114,7 +123,7 @@ struct GoalQueueView: View {
                     Button {
                         commit()
                     } label: {
-                        Label("Add prompt", systemImage: "plus")
+                        Label(addButtonTitle, systemImage: "plus")
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
@@ -123,6 +132,7 @@ struct GoalQueueView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.return, modifiers: [.command])
                 }
             } else {
                 Button {
@@ -135,6 +145,9 @@ struct GoalQueueView: View {
                         Image(systemName: "plus")
                         Text("Add prompt")
                         Spacer()
+                        Text("⌘V paste plan")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.tertiary)
                     }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -146,18 +159,45 @@ struct GoalQueueView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .onPasteCommand(of: [.plainText]) { providers in
+                    handlePasteProviders(providers)
+                }
             }
         }
     }
 
+    private var addButtonTitle: String {
+        let count = PromptBulkImport.prompts(from: draftPrompt).count
+        return count > 1 ? "Add \(count) prompts" : "Add prompt"
+    }
+
     private func commit() {
-        let prompt = draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return }
-        engine.addGoal(title: draftTitle, prompt: prompt)
+        let raw = draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        let prompts = PromptBulkImport.prompts(from: raw)
+        if prompts.count > 1 || draftTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = engine.addGoalsFromPaste(raw)
+        } else {
+            engine.addGoal(title: draftTitle, prompt: prompts[0])
+        }
         withAnimation(.snappy) {
             draftTitle = ""
             draftPrompt = ""
             isComposerExpanded = false
+        }
+    }
+
+    private func handlePasteProviders(_ providers: [NSItemProvider]) {
+        guard let provider = providers.first else { return }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let string = object as? String else { return }
+            Task { @MainActor in
+                if engine.addGoalsFromPaste(string) > 0 {
+                    withAnimation(.snappy) {
+                        isComposerExpanded = false
+                    }
+                }
+            }
         }
     }
 }

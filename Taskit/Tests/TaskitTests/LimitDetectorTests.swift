@@ -81,3 +81,33 @@ final class PersistenceEfficiencyTests: XCTestCase {
         XCTAssertTrue(text.contains("Do A"))
     }
 }
+
+final class PromptBulkImportTests: XCTestCase {
+    func testSplitsOnBlankLines() {
+        let raw = """
+        First prompt
+
+        Second prompt
+        with two lines
+
+        Third
+        """
+        let prompts = PromptBulkImport.prompts(from: raw)
+        XCTAssertEqual(prompts.count, 3)
+        XCTAssertTrue(prompts[1].contains("with two lines"))
+    }
+
+    func testFallsBackToSingleLines() {
+        let prompts = PromptBulkImport.prompts(from: "A\nB\nC")
+        XCTAssertEqual(prompts, ["A", "B", "C"])
+    }
+
+    func testSettingsDecodeMissingPauseDefaultsFalse() throws {
+        let json = """
+        {"overarchingGoal":"Ship it","repositoryURL":"","startingRef":"main","modelId":"","autoCreatePR":true,"dispatchMode":"continueAgent","autoContinueOnFinish":true,"autoResumeOnLimitReset":true,"sessionWindowHours":5,"prependOverarchingGoal":true,"launchAtLogin":true,"notifyOnDispatch":true,"notifyOnComplete":true,"notifyOnLimit":true}
+        """.data(using: .utf8)!
+        let settings = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertFalse(settings.sessionFlowPaused)
+        XCTAssertEqual(settings.overarchingGoal, "Ship it")
+    }
+}

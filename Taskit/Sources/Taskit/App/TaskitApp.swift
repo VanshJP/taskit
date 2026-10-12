@@ -37,6 +37,7 @@ struct TaskitApp: App {
     }
 
     private var menuSymbol: String {
+        if engine.isPaused { return "pause.circle" }
         switch engine.session.phase {
         case .cooling: return "hourglass"
         case .ready: return "sparkles"

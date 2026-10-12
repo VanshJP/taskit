@@ -6,6 +6,7 @@ struct MenuBarRootView: View {
     @Bindable var engine: RelayEngine
     @State private var showSettings = false
     @State private var overarchingDraft = ""
+    @State private var confirmClear = false
     @FocusState private var overarchingFocused: Bool
 
     var body: some View {
@@ -14,7 +15,17 @@ struct MenuBarRootView: View {
             VStack(spacing: 12) {
                 topBar
                 SessionHeroView(engine: engine)
+                if !engine.readinessIssues.isEmpty {
+                    SetupBannerView(issues: engine.readinessIssues) {
+                        showSettings = true
+                    }
+                }
                 overarchingField
+                NextUpView(
+                    goal: engine.nextGoal,
+                    isPaused: engine.isPaused,
+                    onCopy: { engine.copyComposedPrompt() }
+                )
                 GoalQueueView(engine: engine)
                 actionRow
                 footer
@@ -24,6 +35,12 @@ struct MenuBarRootView: View {
         .frame(width: 360)
         .sheet(isPresented: $showSettings) {
             SettingsView(engine: engine)
+        }
+        .confirmationDialog("Clear today’s queue?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Clear day", role: .destructive) { engine.resetDay() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes all prompts and resets the session clock. It can’t be undone.")
         }
         .onAppear {
             if overarchingDraft != engine.settings.overarchingGoal {
@@ -38,7 +55,19 @@ struct MenuBarRootView: View {
             Text("Taskit")
                 .font(.system(size: 18, weight: .semibold, design: .serif))
                 .foregroundStyle(.primary)
+            if engine.isPaused {
+                StatusPill(text: "Paused", tone: .cooling)
+            }
             Spacer()
+            GlassIconButton(
+                systemName: engine.isPaused ? "play.fill" : "pause.fill",
+                help: engine.isPaused ? "Resume auto-relay" : "Pause auto-relay"
+            ) {
+                engine.setPaused(!engine.isPaused)
+            }
+            GlassIconButton(systemName: "doc.on.doc", help: "Copy next composed prompt") {
+                engine.copyComposedPrompt()
+            }
             GlassIconButton(systemName: "gearshape", help: "Settings") {
                 showSettings = true
             }
@@ -70,10 +99,17 @@ struct MenuBarRootView: View {
         VStack(spacing: 8) {
             coolingAwarePrimaryButton
                 .disabled(engine.isBusy)
+                .keyboardShortcut("r", modifiers: [.command])
 
             HStack(spacing: 8) {
-                Button {
-                    engine.markLimitHit()
+                Menu {
+                    Button("Use default (\(engine.settings.sessionWindowHours, specifier: "%.1f")h)") {
+                        engine.markLimitHit()
+                    }
+                    Button("1 hour") { engine.markLimitHit(customHours: 1) }
+                    Button("2 hours") { engine.markLimitHit(customHours: 2) }
+                    Button("5 hours") { engine.markLimitHit(customHours: 5) }
+                    Button("8 hours") { engine.markLimitHit(customHours: 8) }
                 } label: {
                     Label("Limit hit", systemImage: "hourglass")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -82,11 +118,11 @@ struct MenuBarRootView: View {
                         .background(Color.white.opacity(0.08), in: Capsule())
                         .overlay { Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1) }
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.borderlessButton)
                 .help("Start the cool-down clock. Taskit will re-prompt when it ends.")
 
                 Button {
-                    engine.resetDay()
+                    confirmClear = true
                 } label: {
                     Label("Clear day", systemImage: "trash")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -133,6 +169,7 @@ struct MenuBarRootView: View {
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .help(engine.statusMessage)
             Spacer()
             Button("Quit") {
                 engine.persist()
@@ -146,21 +183,20 @@ struct MenuBarRootView: View {
     }
 
     private var primaryTitle: String {
-        if engine.activeGoal != nil {
-            return "Relay running"
-        }
-        if engine.session.phase == .ready {
-            return "Resume queue"
-        }
+        if engine.isPaused { return "Resume relay" }
+        if engine.activeGoal != nil { return "Relay running" }
+        if engine.session.phase == .ready { return "Resume queue" }
         return engine.queuedCount == 0 ? "Start when ready" : "Start relay"
     }
 
     private var primarySymbol: String {
+        if engine.isPaused { return "play.fill" }
         if engine.activeGoal != nil { return "waveform.path.ecg" }
         return "play.fill"
     }
 
     private var footerDot: Color {
+        if engine.isPaused { return TaskitTheme.warmReady.opacity(0.8) }
         switch engine.session.phase {
         case .active: return TaskitTheme.accent
         case .ready: return TaskitTheme.warmReady
