@@ -25,7 +25,7 @@ struct SessionHeroView: View {
                 phaseAccent: accent,
                 symbol: heroSymbol,
                 fraction: "\(engine.completedCount)/\(max(engine.goals.count, 0))",
-                pulse: engine.session.phase == .active
+                pulse: false
             )
             .animation(TaskitTheme.springSoft, value: progress)
 
@@ -34,7 +34,7 @@ struct SessionHeroView: View {
 
                 Text(headline)
                     .font(TaskitTheme.displayFont)
-                    .foregroundStyle(Color.white.opacity(0.96))
+                    .foregroundStyle(Color.white.opacity(0.9))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -43,7 +43,7 @@ struct SessionHeroView: View {
                     .animation(TaskitTheme.springSnappy, value: headline)
 
                 Text(subline)
-                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .font(.system(size: 12.5, weight: .regular, design: .default))
                     .foregroundStyle(TaskitTheme.hush)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -60,13 +60,7 @@ struct SessionHeroView: View {
     }
 
     private var phaseAccent: Color {
-        if engine.isPaused { return TaskitTheme.warmReady }
-        switch engine.session.phase {
-        case .ready: return TaskitTheme.warmReady
-        case .cooling: return TaskitTheme.warmReady
-        case .active: return TaskitTheme.accent
-        case .idle: return TaskitTheme.accentSoft
-        }
+        Color.white.opacity(0.7)
     }
 
     private func ringProgress(at now: Date) -> Double {

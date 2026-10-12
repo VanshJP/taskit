@@ -67,7 +67,7 @@ struct GoalRowView: View {
         .background {
             if goal.status == .running || goal.status == .dispatching {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(TaskitTheme.accent.opacity(0.08))
+                    .fill(Color.white.opacity(0.05))
             }
         }
         .accessibilityElement(children: .combine)

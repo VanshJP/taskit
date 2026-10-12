@@ -78,25 +78,9 @@ struct MenuBarRootView: View {
 
     private var brandBar: some View {
         HStack(alignment: .center, spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [TaskitTheme.accent.opacity(0.9), TaskitTheme.accentDeep],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 28, height: 28)
-                    .shadow(color: TaskitTheme.accent.opacity(0.35), radius: 8, y: 2)
-                Image(systemName: "moon.stars.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color(red: 0.05, green: 0.1, blue: 0.1))
-            }
-
             Text("Taskit")
                 .font(TaskitTheme.brandFont)
-                .foregroundStyle(Color.white.opacity(0.96))
+                .foregroundStyle(Color.white.opacity(0.9))
 
             Spacer(minLength: 0)
 
@@ -124,9 +108,9 @@ struct MenuBarRootView: View {
     private var dayGoalSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: "Day goal")
-            TextField("Ship auth end-to-end, keep PRs small…", text: $overarchingDraft, axis: .vertical)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.92))
+                TextField("Ship auth end-to-end, keep PRs small…", text: $overarchingDraft, axis: .vertical)
+                    .font(.system(size: 13.5, weight: .regular, design: .default))
+                    .foregroundStyle(Color.white.opacity(0.88))
                 .lineLimit(2...3)
                 .textFieldStyle(.plain)
                 .focused($overarchingFocused)
@@ -154,13 +138,13 @@ struct MenuBarRootView: View {
                     Button("8 hours") { engine.markLimitHit(customHours: 8) }
                 } label: {
                     Label("Limit hit", systemImage: "hourglass")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .medium, design: .default))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .foregroundStyle(TaskitTheme.mist)
                         .background {
                             Capsule()
-                                .fill(Color.white.opacity(0.06))
+                                .fill(Color.white.opacity(0.05))
                                 .overlay { Capsule().strokeBorder(TaskitTheme.hairline, lineWidth: 1) }
                         }
                 }
@@ -201,10 +185,9 @@ struct MenuBarRootView: View {
         HStack(spacing: 8) {
             Circle()
                 .fill(footerDot)
-                .frame(width: 7, height: 7)
-                .shadow(color: footerDot.opacity(0.7), radius: 5)
+                .frame(width: 6, height: 6)
             Text(engine.statusMessage)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(.system(size: 11, weight: .regular, design: .default))
                 .foregroundStyle(TaskitTheme.hush)
                 .lineLimit(1)
                 .help(engine.statusMessage)
@@ -234,12 +217,10 @@ struct MenuBarRootView: View {
     }
 
     private var footerDot: Color {
-        if engine.isPaused { return TaskitTheme.warmReady.opacity(0.85) }
         switch engine.session.phase {
-        case .active: return TaskitTheme.accent
-        case .ready: return TaskitTheme.warmReady
-        case .cooling: return TaskitTheme.warmReady.opacity(0.75)
-        case .idle: return Color.white.opacity(0.3)
+        case .active: return Color.white.opacity(0.55)
+        case .ready, .cooling: return Color.white.opacity(0.4)
+        case .idle: return Color.white.opacity(0.22)
         }
     }
 }

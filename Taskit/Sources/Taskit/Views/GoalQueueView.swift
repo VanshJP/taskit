@@ -70,13 +70,13 @@ struct GoalQueueView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "text.badge.plus")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(TaskitTheme.accent.opacity(0.95))
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(Color.white.opacity(0.45))
             Text("Queue prompts for the day")
-                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .font(.system(size: 13, weight: .medium, design: .default))
+                .foregroundStyle(Color.white.opacity(0.85))
             Text("Paste a whole plan — blank lines become separate prompts.")
-                .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                .font(.system(size: 11.5, weight: .regular, design: .default))
                 .foregroundStyle(TaskitTheme.hush)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
@@ -129,16 +129,16 @@ struct GoalQueueView: View {
                         commit()
                     } label: {
                         Label(addButtonTitle, systemImage: "plus")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12, weight: .medium, design: .default))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
                             .background(
-                                TaskitTheme.accent.opacity(
-                                    draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1
+                                Color.white.opacity(
+                                    draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.2 : 0.9
                                 ),
                                 in: Capsule()
                             )
-                            .foregroundStyle(Color(red: 0.05, green: 0.1, blue: 0.1))
+                            .foregroundStyle(Color.black.opacity(0.8))
                     }
                     .buttonStyle(PressableButtonStyle())
                     .disabled(draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
