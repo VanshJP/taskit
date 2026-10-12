@@ -9,19 +9,31 @@ struct TaskitApp: App {
         MenuBarExtra {
             MenuBarRootView(engine: engine)
         } label: {
-            Label {
-                Text("Taskit")
-            } icon: {
-                Image(systemName: menuSymbol)
-                    .symbolRenderingMode(.hierarchical)
+            // Timeline only while cooling — idle/active labels stay static (zero timer cost).
+            if engine.session.phase == .cooling {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    menuLabel(at: context.date)
+                }
+            } else {
+                menuLabel(at: .now)
             }
-            .help(engine.statusMessage)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(engine: engine)
         }
+    }
+
+    @ViewBuilder
+    private func menuLabel(at date: Date) -> some View {
+        Label {
+            Text(engine.menuBarLabel(at: date))
+        } icon: {
+            Image(systemName: menuSymbol)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .help(engine.statusMessage)
     }
 
     private var menuSymbol: String {

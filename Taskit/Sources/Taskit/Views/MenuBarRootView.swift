@@ -26,8 +26,10 @@ struct MenuBarRootView: View {
             SettingsView(engine: engine)
         }
         .onAppear {
-            overarchingDraft = engine.settings.overarchingGoal
-            Task { await NotificationService.shared.requestAuthorization() }
+            if overarchingDraft != engine.settings.overarchingGoal {
+                overarchingDraft = engine.settings.overarchingGoal
+            }
+            Task { await NotificationService.shared.requestAuthorizationIfNeeded() }
         }
     }
 
@@ -58,7 +60,7 @@ struct MenuBarRootView: View {
                     .textFieldStyle(.plain)
                     .focused($overarchingFocused)
                     .onChange(of: overarchingDraft) { _, value in
-                        engine.updateSettings { $0.overarchingGoal = value }
+                        engine.updateSettingsDebounced { $0.overarchingGoal = value }
                     }
             }
         }
@@ -66,14 +68,8 @@ struct MenuBarRootView: View {
 
     private var actionRow: some View {
         VStack(spacing: 8) {
-            PrimaryGlassButton(
-                title: primaryTitle,
-                systemImage: primarySymbol,
-                isProminent: true
-            ) {
-                Task { await engine.startRelay() }
-            }
-            .disabled(engine.isBusy)
+            coolingAwarePrimaryButton
+                .disabled(engine.isBusy)
 
             HStack(spacing: 8) {
                 Button {
@@ -104,18 +100,42 @@ struct MenuBarRootView: View {
         }
     }
 
+    @ViewBuilder
+    private var coolingAwarePrimaryButton: some View {
+        if engine.session.phase == .cooling {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                PrimaryGlassButton(
+                    title: "Waiting · \(engine.remainingCoolingLabel(at: context.date))",
+                    systemImage: "moon.zzz",
+                    isProminent: true
+                ) {
+                    Task { await engine.startRelay() }
+                }
+            }
+        } else {
+            PrimaryGlassButton(
+                title: primaryTitle,
+                systemImage: primarySymbol,
+                isProminent: true
+            ) {
+                Task { await engine.startRelay() }
+            }
+        }
+    }
+
     private var footer: some View {
         HStack {
             Circle()
                 .fill(footerDot)
                 .frame(width: 7, height: 7)
-                .shadow(color: footerDot.opacity(0.8), radius: 4)
+                .shadow(color: footerDot.opacity(0.55), radius: 3)
             Text(engine.statusMessage)
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
             Button("Quit") {
+                engine.persist()
                 NSApp.terminate(nil)
             }
             .buttonStyle(.plain)
@@ -126,20 +146,16 @@ struct MenuBarRootView: View {
     }
 
     private var primaryTitle: String {
-        if engine.session.phase == .cooling {
-            return "Waiting · \(engine.remainingCoolingLabel)"
-        }
         if engine.activeGoal != nil {
             return "Relay running"
         }
         if engine.session.phase == .ready {
             return "Resume queue"
         }
-        return engine.queuedGoals.isEmpty ? "Start when ready" : "Start relay"
+        return engine.queuedCount == 0 ? "Start when ready" : "Start relay"
     }
 
     private var primarySymbol: String {
-        if engine.session.phase == .cooling { return "moon.zzz" }
         if engine.activeGoal != nil { return "waveform.path.ecg" }
         return "play.fill"
     }

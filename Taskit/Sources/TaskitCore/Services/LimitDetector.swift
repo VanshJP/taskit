@@ -1,6 +1,6 @@
 import Foundation
 
-public struct LimitSignal: Equatable {
+public struct LimitSignal: Equatable, Sendable {
     public var reason: String
     public var resetAt: Date?
 

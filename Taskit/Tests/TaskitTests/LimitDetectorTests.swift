@@ -53,3 +53,31 @@ final class SessionClockTests: XCTestCase {
         XCTAssertTrue(text.contains("Add invoice PDF export"))
     }
 }
+
+final class DurationFormatTests: XCTestCase {
+    func testClockFormatting() {
+        XCTAssertEqual(DurationFormat.clock(0), "00:00")
+        XCTAssertEqual(DurationFormat.clock(65), "01:05")
+        XCTAssertEqual(DurationFormat.clock(5 * 3600 + 12 * 60 + 8), "5:12:08")
+    }
+
+    func testRemainingNeverNegative() {
+        let past = Date().addingTimeInterval(-30)
+        XCTAssertEqual(DurationFormat.remaining(until: past), 0)
+        XCTAssertEqual(DurationFormat.remaining(until: nil), 0)
+    }
+}
+
+final class PersistenceEfficiencyTests: XCTestCase {
+    func testCompactEncoderDoesNotPrettyPrint() throws {
+        let goals = [Goal(title: "A", prompt: "Do A")]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("taskit-goals-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        Persistence.save(goals, to: url)
+        let data = try Data(contentsOf: url)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(text.contains("\n  "), "Persistence should write compact JSON")
+        XCTAssertTrue(text.contains("Do A"))
+    }
+}

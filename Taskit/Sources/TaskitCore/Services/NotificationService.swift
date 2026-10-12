@@ -5,10 +5,17 @@ import UserNotifications
 public final class NotificationService {
     public static let shared = NotificationService()
 
+    private var didRequestAuthorization = false
+    private let limitResumeID = "taskit.limit-resume"
+
     public init() {}
 
-    public func requestAuthorization() async {
+    public func requestAuthorizationIfNeeded() async {
+        guard !didRequestAuthorization else { return }
+        didRequestAuthorization = true
         let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
     }
 
@@ -27,6 +34,10 @@ public final class NotificationService {
     }
 
     public func scheduleLimitResume(at date: Date, goalTitle: String) {
+        let center = UNUserNotificationCenter.current()
+        // Replace any prior cool-down alarm — don't stack overnight duplicates.
+        center.removePendingNotificationRequests(withIdentifiers: [limitResumeID])
+
         let content = UNMutableNotificationContent()
         content.title = "Session ready"
         content.body = "Limit window cleared. Next up: \(goalTitle)"
@@ -38,10 +49,10 @@ public final class NotificationService {
         )
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
         let request = UNNotificationRequest(
-            identifier: "taskit.limit-resume",
+            identifier: limitResumeID,
             content: content,
             trigger: trigger
         )
-        UNUserNotificationCenter.current().add(request)
+        center.add(request)
     }
 }

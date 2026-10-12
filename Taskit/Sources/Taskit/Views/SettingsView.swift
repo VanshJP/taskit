@@ -37,8 +37,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.defaultAction)
+            Button("Done") {
+                engine.persist()
+                dismiss()
+            }
+            .keyboardShortcut(.defaultAction)
         }
         .padding(16)
     }
@@ -58,11 +61,11 @@ struct SettingsView: View {
                 Spacer()
                 Button("Save key", action: saveKey)
             }
-            TextField("Repository URL", text: binding(\.repositoryURL))
+            TextField("Repository URL", text: binding(\.repositoryURL, debounce: true))
                 .textFieldStyle(.roundedBorder)
-            TextField("Branch", text: binding(\.startingRef))
+            TextField("Branch", text: binding(\.startingRef, debounce: true))
                 .textFieldStyle(.roundedBorder)
-            TextField("Model ID (optional)", text: binding(\.modelId))
+            TextField("Model ID (optional)", text: binding(\.modelId, debounce: true))
                 .textFieldStyle(.roundedBorder)
             Toggle("Auto-create pull request", isOn: binding(\.autoCreatePR))
         }
@@ -73,7 +76,7 @@ struct SettingsView: View {
             Text("Prepended to every prompt so each handoff stays aligned.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextEditor(text: binding(\.overarchingGoal))
+            TextEditor(text: binding(\.overarchingGoal, debounce: true))
                 .font(.body)
                 .frame(minHeight: 88)
                 .scrollContentBackground(.hidden)
@@ -107,7 +110,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .font(.system(.body, design: .rounded))
             }
-            Slider(value: binding(\.sessionWindowHours), in: 0.5...12, step: 0.5)
+            Slider(value: binding(\.sessionWindowHours, debounce: true), in: 0.5...12, step: 0.5)
             Toggle("Open at login", isOn: binding(\.launchAtLogin))
                 .onChange(of: engine.settings.launchAtLogin) { _, value in
                     LaunchAtLogin.setEnabled(value)
@@ -134,11 +137,15 @@ struct SettingsView: View {
         }
     }
 
-    private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
+    private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>, debounce: Bool = false) -> Binding<T> {
         Binding(
             get: { engine.settings[keyPath: keyPath] },
             set: { newValue in
-                engine.updateSettings { $0[keyPath: keyPath] = newValue }
+                if debounce {
+                    engine.updateSettingsDebounced { $0[keyPath: keyPath] = newValue }
+                } else {
+                    engine.updateSettings { $0[keyPath: keyPath] = newValue }
+                }
             }
         )
     }

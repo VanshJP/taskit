@@ -20,13 +20,14 @@ struct GoalQueueView: View {
                     Text("\(engine.completedCount) of \(engine.goals.count)")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.tertiary)
+                        .monospacedDigit()
                 }
 
                 if engine.goals.isEmpty && !isComposerExpanded {
                     emptyState
                 } else {
                     List {
-                        ForEach(engine.goals.sorted(by: { $0.sortIndex < $1.sortIndex })) { goal in
+                        ForEach(engine.orderedGoals) { goal in
                             GoalRowView(
                                 goal: goal,
                                 onSkip: { engine.skipGoal(goal) },
@@ -85,6 +86,7 @@ struct GoalQueueView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.top, 10)
                             .padding(.leading, 10)
+                            .allowsHitTesting(false)
                     }
                     TextEditor(text: $draftPrompt)
                         .font(.system(size: 12, design: .rounded))

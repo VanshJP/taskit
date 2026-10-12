@@ -21,7 +21,14 @@ enum TaskitTheme {
         )
     }
 
+    /// Rasterized once — soft blurs are expensive if SwiftUI recomposites them every frame.
     static var atmosphere: some View {
+        AtmosphereBackground()
+    }
+}
+
+private struct AtmosphereBackground: View, Equatable {
+    var body: some View {
         ZStack {
             LinearGradient(
                 colors: [
@@ -33,17 +40,19 @@ enum TaskitTheme {
                 endPoint: .bottomTrailing
             )
             Circle()
-                .fill(accent.opacity(0.22))
+                .fill(TaskitTheme.accent.opacity(0.22))
                 .frame(width: 220, height: 220)
                 .blur(radius: 60)
                 .offset(x: 110, y: -80)
             Circle()
-                .fill(warmReady.opacity(0.12))
+                .fill(TaskitTheme.warmReady.opacity(0.12))
                 .frame(width: 180, height: 180)
                 .blur(radius: 50)
                 .offset(x: -90, y: 120)
         }
         .ignoresSafeArea()
+        .drawingGroup()
+        .allowsHitTesting(false)
     }
 }
 
