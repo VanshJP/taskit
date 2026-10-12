@@ -1,0 +1,169 @@
+import SwiftUI
+import TaskitCore
+
+struct SettingsView: View {
+    @Bindable var engine: RelayEngine
+    @State private var apiKeyDraft = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    connectionSection
+                    goalSection
+                    relaySection
+                    sessionSection
+                    notifySection
+                }
+                .padding(16)
+            }
+        }
+        .frame(width: 420, height: 560)
+        .background { TaskitTheme.atmosphere }
+        .onAppear {
+            apiKeyDraft = engine.apiKeyPresent ? "••••••••••••" : ""
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Taskit")
+                    .font(TaskitTheme.brandFont)
+                    .foregroundStyle(Color.white.opacity(0.96))
+                Text("Settings")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(TaskitTheme.hush)
+            }
+            Spacer()
+            Button("Done") {
+                engine.persist()
+                dismiss()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(TaskitTheme.accent)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(16)
+    }
+
+    private var connectionSection: some View {
+        settingsCard("Cursor") {
+            LabeledContent("API key") {
+                SecureField("crsr_… or key from Dashboard", text: $apiKeyDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 240)
+                    .onSubmit(saveKey)
+            }
+            HStack {
+                Text(engine.apiKeyPresent ? "Key saved in Keychain" : "Required for Cloud Agents")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Save key", action: saveKey)
+                Button("Test") {
+                    Task { await engine.verifyAPIConnection() }
+                }
+                .disabled(!engine.apiKeyPresent)
+            }
+            TextField("Repository URL", text: binding(\.repositoryURL, debounce: true))
+                .textFieldStyle(.roundedBorder)
+            TextField("Branch", text: binding(\.startingRef, debounce: true))
+                .textFieldStyle(.roundedBorder)
+            TextField("Model ID (optional)", text: binding(\.modelId, debounce: true))
+                .textFieldStyle(.roundedBorder)
+            Toggle("Auto-create pull request", isOn: binding(\.autoCreatePR))
+        }
+    }
+
+    private var goalSection: some View {
+        settingsCard("Overarching goal") {
+            Text("Prepended to every prompt so each handoff stays aligned.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextEditor(text: binding(\.overarchingGoal, debounce: true))
+                .font(.body)
+                .frame(minHeight: 88)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Toggle("Prepend overarching goal", isOn: binding(\.prependOverarchingGoal))
+        }
+    }
+
+    private var relaySection: some View {
+        settingsCard("Relay") {
+            Picker("Dispatch mode", selection: binding(\.dispatchMode)) {
+                ForEach(DispatchMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            Text(engine.settings.dispatchMode.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Toggle("Continue when a run finishes", isOn: binding(\.autoContinueOnFinish))
+            Toggle("Resume when the limit window clears", isOn: binding(\.autoResumeOnLimitReset))
+            Toggle("Pause auto-relay", isOn: binding(\.sessionFlowPaused))
+            Text("Pause holds the queue after finishes or cool-downs until you resume.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var sessionSection: some View {
+        settingsCard("Session window") {
+            HStack {
+                Text("Default cool-down")
+                Spacer()
+                Text("\(engine.settings.sessionWindowHours, specifier: "%.1f") h")
+                    .foregroundStyle(.secondary)
+                    .font(.system(.body, design: .rounded))
+            }
+            Slider(value: binding(\.sessionWindowHours, debounce: true), in: 0.5...12, step: 0.5)
+            Toggle("Open at login", isOn: binding(\.launchAtLogin))
+                .onChange(of: engine.settings.launchAtLogin) { _, value in
+                    LaunchAtLogin.setEnabled(value)
+                }
+        }
+    }
+
+    private var notifySection: some View {
+        settingsCard("Notifications") {
+            Toggle("When a prompt is sent", isOn: binding(\.notifyOnDispatch))
+            Toggle("When a goal completes", isOn: binding(\.notifyOnComplete))
+            Toggle("When a limit is hit", isOn: binding(\.notifyOnLimit))
+        }
+    }
+
+    private func settingsCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        GlassSurface(cornerRadius: 20, padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionLabel(text: title)
+                content()
+            }
+        }
+    }
+
+    private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>, debounce: Bool = false) -> Binding<T> {
+        Binding(
+            get: { engine.settings[keyPath: keyPath] },
+            set: { newValue in
+                if debounce {
+                    engine.updateSettingsDebounced { $0[keyPath: keyPath] = newValue }
+                } else {
+                    engine.updateSettings { $0[keyPath: keyPath] = newValue }
+                }
+            }
+        )
+    }
+
+    private func saveKey() {
+        let trimmed = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != "••••••••••••" else { return }
+        engine.updateAPIKey(trimmed)
+        apiKeyDraft = engine.apiKeyPresent ? "••••••••••••" : ""
+    }
+}

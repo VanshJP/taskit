@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Taskit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #73dbc7;
+      --accent-deep: #29857a;
+      --warm: #f5c76b;
+      --ink: rgba(255,255,255,0.96);
+      --mist: rgba(255,255,255,0.72);
+      --hush: rgba(255,255,255,0.48);
+      --hair: rgba(255,255,255,0.12);
+      --panel: rgba(18, 24, 27, 0.62);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 520px at 78% 8%, rgba(115,219,199,0.22), transparent 55%),
+        radial-gradient(700px 420px at 12% 88%, rgba(245,199,107,0.12), transparent 50%),
+        linear-gradient(160deg, #101619 0%, #0a0e10 48%, #12181a 100%);
+      display: grid;
+      place-items: center;
+      padding: 40px 20px 56px;
+    }
+    .shell { width: min(1040px, 100%); position: relative; }
+    .menubar {
+      height: 30px;
+      border-radius: 12px 12px 0 0;
+      background: rgba(16,20,22,0.78);
+      backdrop-filter: blur(20px);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px; font-size: 12px; color: rgba(255,255,255,0.7);
+      border: 1px solid rgba(255,255,255,0.08); border-bottom: none;
+    }
+    .taskit-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 2px 10px; border-radius: 999px;
+      background: rgba(115,219,199,0.16); color: #b8f0e4; font-weight: 500;
+    }
+    .stage {
+      position: relative; height: 740px;
+      border-radius: 0 0 20px 20px;
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 30% 35%, rgba(115,219,199,0.12), transparent 40%),
+        radial-gradient(circle at 78% 65%, rgba(245,199,107,0.08), transparent 42%),
+        linear-gradient(135deg, #1a2224, #0d1214 60%, #172022);
+    }
+    .panel {
+      position: absolute; top: 22px; right: 56px; width: 372px;
+      padding: 16px; border-radius: 26px;
+      background: var(--panel);
+      backdrop-filter: blur(34px) saturate(150%);
+      border: 1px solid transparent;
+      background-clip: padding-box;
+      box-shadow:
+        0 40px 90px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.12);
+      display: flex; flex-direction: column; gap: 14px;
+      animation: rise 720ms cubic-bezier(.2,.85,.2,1) both;
+    }
+    .panel::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.28), rgba(255,255,255,0.05) 40%, rgba(255,255,255,0.14));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      pointer-events: none;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(-12px) scale(0.985); }
+      to { opacity: 1; transform: none; }
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .mark {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(145deg, var(--accent), var(--accent-deep));
+      display: grid; place-items: center;
+      box-shadow: 0 6px 18px rgba(115,219,199,0.35);
+      font-size: 12px; color: #0c1414;
+    }
+    .logo {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 28px; font-weight: 600; letter-spacing: -0.02em;
+    }
+    .icons { margin-left: auto; display: flex; gap: 6px; }
+    .icon {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.16);
+      color: var(--mist); font-size: 12px;
+    }
+    .hero { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 6px 0 2px; }
+    .ring-wrap { position: relative; width: 136px; height: 136px; display: grid; place-items: center; }
+    .glow {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: radial-gradient(circle, rgba(245,199,107,0.22), transparent 68%);
+      animation: breathe 2.8s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.05); opacity: 1; }
+    }
+    .ring {
+      width: 112px; height: 112px; border-radius: 50%;
+      background:
+        radial-gradient(circle at center, rgba(12,18,18,0.92) 57%, transparent 58%),
+        conic-gradient(from -90deg, rgba(245,199,107,0.25), var(--warm), var(--accent) 62%, rgba(255,255,255,0.08) 62%);
+      display: grid; place-items: center; position: relative; z-index: 1;
+      box-shadow: 0 0 24px rgba(245,199,107,0.18);
+    }
+    .ring-inner { text-align: center; }
+    .ring-inner .sym { font-size: 18px; color: var(--warm); }
+    .ring-inner small { display: block; margin-top: 4px; color: var(--hush); font-size: 11px; font-weight: 600; }
+    .pill {
+      display: inline-flex; padding: 5px 10px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+      background: rgba(245,199,107,0.16); color: var(--warm);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .headline {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 34px; font-weight: 600; line-height: 1; margin: 0;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+      text-align: center;
+    }
+    .sub { margin: 0; color: var(--hush); font-size: 12.5px; text-align: center; max-width: 280px; line-height: 1.4; }
+    .section-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--hush); margin-bottom: 8px;
+    }
+    .day-goal { font-size: 14px; font-weight: 500; line-height: 1.35; color: rgba(255,255,255,0.92); }
+    .glass {
+      border-radius: 18px; padding: 13px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03) 55%, rgba(115,219,199,0.05));
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.2);
+    }
+    .next { display: flex; gap: 12px; align-items: center; }
+    .accent-bar {
+      width: 3px; height: 36px; border-radius: 3px;
+      background: linear-gradient(180deg, var(--accent), rgba(245,199,107,0.7));
+    }
+    .next h4 { margin: 0 0 3px; font-size: 13.5px; font-weight: 600; }
+    .next p { margin: 0; font-size: 11.5px; color: var(--hush); line-height: 1.35; }
+    .queue-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .goal {
+      display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+      padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .goal:last-of-type { border-bottom: none; }
+    .dot { width: 14px; height: 14px; margin-top: 3px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.28); }
+    .dot.done { border: none; background: var(--accent); box-shadow: inset 0 0 0 3px rgba(18,24,26,0.85); }
+    .dot.wait { border-color: var(--warm); background: rgba(245,199,107,0.18); }
+    .goal h4 { margin: 0 0 3px; font-size: 13px; font-weight: 600; }
+    .goal p { margin: 0; font-size: 11.5px; color: var(--hush); }
+    .add {
+      margin-top: 8px; padding: 12px; border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.16); color: var(--hush);
+      font-size: 12px; font-weight: 600;
+    }
+    .primary {
+      width: 100%; border: 0; cursor: default;
+      padding: 12px 14px; border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), #8ad4c7);
+      color: #0c1414; font-weight: 600; font-size: 13.5px;
+      box-shadow: 0 10px 28px rgba(115,219,199,0.28), inset 0 1px 0 rgba(255,255,255,0.4);
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .ghost {
+      padding: 10px 12px; border-radius: 999px; text-align: center;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--hair);
+      color: var(--mist); font-size: 12px; font-weight: 600;
+    }
+    .footer { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--hush); }
+    .live {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--warm);
+      box-shadow: 0 0 10px rgba(245,199,107,0.85);
+      animation: pulse 1.7s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.85); opacity: 0.7; }
+    }
+    .caption {
+      margin-top: 18px; text-align: center; color: rgba(255,255,255,0.45); font-size: 13px;
+    }
+    .caption strong { color: rgba(255,255,255,0.8); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="menubar">
+      <div style="display:flex;gap:14px;align-items:center"><span>􀣺</span><span>Finder</span><span>File</span></div>
+      <div class="taskit-chip">✦ Taskit · 4:12:08</div>
+    </div>
+    <div class="stage">
+      <aside class="panel" aria-label="Taskit">
+        <div class="brand">
+          <div class="mark">✦</div>
+          <div class="logo">Taskit</div>
+          <div class="icons">
+            <div class="icon">⏸</div>
+            <div class="icon">⎘</div>
+            <div class="icon">⚙</div>
+            <div class="icon">↗</div>
+          </div>
+        </div>
+
+        <section class="hero">
+          <div class="ring-wrap">
+            <div class="glow"></div>
+            <div class="ring">
+              <div class="ring-inner">
+                <div class="sym">⏳</div>
+                <small>1/4</small>
+              </div>
+            </div>
+          </div>
+          <div class="pill">Cooling</div>
+          <h2 class="headline">4:12:08</h2>
+          <p class="sub">Limit window · the next prompt fires on its own</p>
+        </section>
+
+        <section>
+          <div class="section-label">Day goal</div>
+          <div class="day-goal">Ship billing end-to-end. Keep PRs small and green.</div>
+        </section>
+
+        <section class="glass next">
+          <div class="accent-bar"></div>
+          <div style="flex:1">
+            <div class="section-label">Next up</div>
+            <h4>Webhook retries</h4>
+            <p>Continue: harden Stripe webhook retries and idempotency.</p>
+          </div>
+          <div class="icon">⎘</div>
+        </section>
+
+        <section>
+          <div class="queue-head">
+            <div class="section-label" style="margin:0">Today</div>
+            <span style="color:var(--hush);font-size:11px;font-weight:600">1 of 4</span>
+          </div>
+          <div class="glass" style="padding:8px 10px">
+            <div class="goal"><div class="dot done"></div><div><h4>Invoice PDF export</h4><p>Add PDF export on the invoice detail page with tests.</p></div></div>
+            <div class="goal"><div class="dot wait"></div><div><h4>Webhook retries</h4><p>Continue: harden Stripe webhook retries and idempotency.</p></div></div>
+            <div class="goal"><div class="dot"></div><div><h4>Admin refund flow</h4><p>Build refund UI for support, wire to existing API.</p></div></div>
+            <div class="add">＋ Add prompt</div>
+          </div>
+        </section>
+
+        <button class="primary">Waiting · 4:12:08</button>
+        <div class="row">
+          <div class="ghost">⌛ Limit hit</div>
+          <div class="ghost">Clear day</div>
+        </div>
+        <div class="footer">
+          <span class="live"></span>
+          Cooling for 5 hours. Next prompt will fire automatically.
+        </div>
+      </aside>
+    </div>
+    <p class="caption"><strong>Taskit</strong> — brand-first glass. One hero. The clock keeps working while you don’t.</p>
+  </div>
+</body>
+</html>
